@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Guitar Reading Assistant</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header>
+  <h1>Sight Reading &mdash; Classical Guitar</h1>
+  <label for="position">Position
+    <select id="position">
+      <option value="1">1st position</option>
+      <option value="5" selected>5th position</option>
+      <option value="7">7th position</option>
+      <option value="12">12th position</option>
+    </select>
+  </label>
+  <a href="#" id="cheatLink">Note map</a>
+  <span class="meta" id="meta"></span>
+  <label for="accidentals"><input type="checkbox" id="accidentals" /> <span id="accidentalsLabel">Random accidentals</span></label>
+  <button id="regen">Generate new</button>
+</header>
+<main id="sheet"></main>
+<div id="tooltip" role="tooltip" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
