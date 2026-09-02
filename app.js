@@ -5,6 +5,7 @@ const CONFIG = {
   measuresPerSystem: 4,
   position: 5,
   accidentals: false,
+  strings: [6, 5, 4, 3, 2, 1],
   maxLeapSteps: 7 // limit diatonic leap between consecutive notes
 };
 
@@ -56,9 +57,15 @@ const POSITIONS = {
   12: { label: '12th position', ...buildPosition(12) }
 };
 
+// Notes playable in the current position on the currently enabled strings,
+// with fingerings narrowed to those strings.
 const currentPool = () => {
   const pos = POSITIONS[CONFIG.position];
-  return CONFIG.accidentals ? pos.all : pos.naturals;
+  const base = CONFIG.accidentals ? pos.all : pos.naturals;
+  if (CONFIG.strings.length === 6) return base;
+  return base
+    .map(p => ({ ...p, fingerings: p.fingerings.filter(f => CONFIG.strings.includes(f.string)) }))
+    .filter(p => p.fingerings.length > 0);
 };
 
 const FINGERS = ['open', 'index (1)', 'middle (2)', 'ring (3)', 'pinky (4)'];
@@ -337,8 +344,8 @@ function renderCheatSheet() {
   const pool = currentPool();
   const perRow = 9;
   const rows = Math.ceil(pool.length / perRow);
-  const rowGap = SPACE * 21;
-  const height = SYSTEM_TOP + (rows - 1) * rowGap + STAFF_H + SPACE * 12;
+  const rowGap = SPACE * 16;
+  const height = SYSTEM_TOP + (rows - 1) * rowGap + STAFF_H + SPACE * 8;
   const svg = el('svg', { viewBox: `0 0 ${VIEW_W} ${height}`, xmlns: SVG_NS });
 
   for (let r = 0; r < rows; r++) {
@@ -356,17 +363,18 @@ function renderCheatSheet() {
       const x = start + colW * (j + 0.5);
       drawQuarterNote(svg, x, bottom, note, note.alter === 0 ? null : '\u266F');
 
-      let ty = bottom + SPACE * 5;
-      const name = el('text', { class: 'cheat-pitch', x, y: ty, 'text-anchor': 'middle' });
-      name.textContent = pitchName(note);
-      svg.appendChild(name);
-
-      for (const f of note.fingerings) {
-        ty += 14;
-        const t = el('text', { class: 'cheat-label', x, y: ty, 'text-anchor': 'middle' });
-        t.textContent = `${CIRCLED_STRING[f.string]} fr ${f.fret} \u00b7 ${fingerName(f)}`;
-        svg.appendChild(t);
-      }
+      const steps = diatonic(note.letter, note.octave) - E4;
+      const noteY = bottom - steps * (SPACE / 2);
+      const stemUp = steps < 4;
+      const fingers = [...new Set(note.fingerings.map(f => f.finger))].sort();
+      const label = el('text', {
+        class: 'cheat-finger',
+        x,
+        y: stemUp ? noteY + SPACE * 2 : noteY - SPACE * 1.6,
+        'text-anchor': 'middle'
+      });
+      label.textContent = fingers.join('/');
+      svg.appendChild(label);
     });
   }
 
@@ -378,23 +386,27 @@ function renderCheatSheet() {
 const positionSelect = document.getElementById('position');
 const accidentalsToggle = document.getElementById('accidentals');
 const accidentalsLabel = document.getElementById('accidentalsLabel');
+const stringToggles = [...document.querySelectorAll('.string-toggle')];
 const cheatLink = document.getElementById('cheatLink');
 const regenButton = document.getElementById('regen');
 const metaEl = document.getElementById('meta');
 
 let currentNotes = [];
 let view = 'score';
-let scoreSettings = null; // position/accidentals the current score was generated with
+let scoreSettings = null; // settings key the current score was generated with
 
 function updateMeta() {
   const pos = POSITIONS[CONFIG.position];
   const pool = currentPool();
   const lo = pool[0], hi = pool[pool.length - 1];
-  const range = `${pos.label} (${pitchName(lo)}\u2013${pitchName(hi)} as written)`;
+  const strings = CONFIG.strings.length === 6
+    ? 'all strings'
+    : `string${CONFIG.strings.length > 1 ? 's' : ''} ${CONFIG.strings.join(', ')}`;
+  const range = `${pos.label}, ${strings} (${pitchName(lo)}\u2013${pitchName(hi)} as written)`;
   metaEl.textContent = view === 'score'
     ? `${CONFIG.accidentals ? 'Chromatic' : 'C major'} \u00b7 4/4 \u00b7 ${CONFIG.measures} measures ` +
       `\u00b7 quarter notes \u00b7 ${range}`
-    : `Note map \u00b7 ${pool.length} notes \u00b7 ${range} \u00b7 circled digit = string`;
+    : `Note map \u00b7 ${pool.length} notes \u00b7 ${range} \u00b7 numbers are left-hand fingers`;
 }
 
 function draw() {
@@ -408,33 +420,48 @@ function setView(next) {
   cheatLink.textContent = view === 'score' ? 'Note map' : '\u2190 Back to score';
   regenButton.hidden = view !== 'score';
   accidentalsLabel.textContent = view === 'score' ? 'Random accidentals' : 'Show accidentals';
-  if (view === 'score' &&
-      (scoreSettings.position !== CONFIG.position ||
-       scoreSettings.accidentals !== CONFIG.accidentals)) {
+  if (view === 'score' && scoreSettings !== settingsKey()) {
     newExercise();
     return;
   }
   draw();
 }
 
+const settingsKey = () =>
+  `${CONFIG.position}|${CONFIG.accidentals}|${CONFIG.strings.join('')}`;
+
 function newExercise() {
   currentNotes = generate();
-  scoreSettings = { position: CONFIG.position, accidentals: CONFIG.accidentals };
+  scoreSettings = settingsKey();
   draw();
+}
+
+function settingsChanged() {
+  if (view === 'score') newExercise();
+  else draw();
 }
 
 positionSelect.value = String(CONFIG.position);
 accidentalsToggle.checked = CONFIG.accidentals;
 accidentalsToggle.addEventListener('change', () => {
   CONFIG.accidentals = accidentalsToggle.checked;
-  if (view === 'score') newExercise();
-  else draw();
+  settingsChanged();
 });
 positionSelect.addEventListener('change', () => {
   CONFIG.position = Number(positionSelect.value);
-  if (view === 'score') newExercise();
-  else draw();
+  settingsChanged();
 });
+for (const box of stringToggles) {
+  box.addEventListener('change', () => {
+    const chosen = stringToggles.filter(b => b.checked);
+    if (chosen.length === 0) {
+      box.checked = true; // keep at least one string playable
+      return;
+    }
+    CONFIG.strings = chosen.map(b => Number(b.value)).sort((a, b) => b - a);
+    settingsChanged();
+  });
+}
 cheatLink.addEventListener('click', e => {
   e.preventDefault();
   setView(view === 'score' ? 'cheat' : 'score');

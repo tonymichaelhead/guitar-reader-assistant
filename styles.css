@@ -32,6 +32,13 @@ button {
 button:hover { background: #f0f0f0; }
 label { font-size: 13px; display: flex; align-items: center; gap: 6px; }
 label[hidden], button[hidden] { display: none; }
+.string-group {
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.string-group label { gap: 3px; }
 select {
   font: inherit;
   padding: 7px 10px;
@@ -86,5 +93,9 @@ svg { display: block; width: 100%; height: auto; }
   border-bottom: 1px dotted var(--accent);
 }
 #cheatLink:hover { color: #7d2f13; }
-.cheat-label { font-size: 11px; fill: #444; font-family: "Segoe UI", sans-serif; }
-.cheat-pitch { font-size: 11px; fill: var(--accent); font-weight: 600; font-family: "Segoe UI", sans-serif; }
+.cheat-finger {
+  font-size: 13px;
+  fill: var(--accent);
+  font-weight: 600;
+  font-family: "Segoe UI", sans-serif;
+}
