@@ -1,0 +1,281 @@
+/* The printed page: title block, notation, note map, tooltip. */
+
+.page {
+  position: relative;
+  min-width: 0;
+  padding: 30px 30px 22px;
+  background-color: var(--paper);
+  /* A faint vignette toward the edges; the middle, behind the staves, stays flat. */
+  background-image: radial-gradient(ellipse at center, transparent 58%, rgba(124, 88, 32, 0.11) 100%);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  box-shadow:
+    inset 0 0 0 7px var(--paper),
+    inset 0 0 0 8px var(--rule),
+    0 1px 2px rgba(60, 40, 10, 0.25),
+    0 18px 40px -18px rgba(60, 40, 10, 0.55);
+}
+
+/* ---- Page tools: what can be done with this study ---------------------- */
+.page-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: -8px -8px 6px;
+}
+.page-tools__status {
+  flex: 1 1 200px;
+  min-width: 0;
+  padding-left: 14px;
+  font-size: 15px;
+  font-style: italic;
+  line-height: 1.3;
+  color: var(--ink-soft);
+}
+/* On a phone the three buttons fill a row, so the status takes its own line under them. */
+@media (max-width: 520px) {
+  .page-tools__status {
+    order: 1;
+    flex-basis: 100%;
+    padding: 0 8px;
+    text-align: right;
+  }
+}
+
+/* ---- Title block ------------------------------------------------------- */
+.title-block {
+  padding: 4px 6px 6px;
+  text-align: center;
+}
+.title-block__dedication {
+  font-size: 16px;
+  font-style: italic;
+  color: var(--ink-soft);
+}
+.title-block__title {
+  margin-top: 2px;
+  font-family: var(--font-display);
+  font-size: clamp(26px, 4.2vw, 42px);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+.title-block__title span {
+  font-size: 0.62em;
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: 0.03em;
+  text-transform: none;
+  white-space: nowrap;
+}
+.ornament {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 340px;
+  margin: 10px auto 12px;
+  color: var(--ochre);
+}
+.ornament::before,
+.ornament::after {
+  content: "";
+  flex: 1;
+  height: 4px;
+  border-top: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+}
+.ornament span {
+  width: 8px;
+  height: 8px;
+  background: currentColor;
+  transform: rotate(45deg);
+}
+.title-block__lines {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px 20px;
+  font-size: 18px;
+}
+.title-block__left {
+  font-style: italic;
+  font-weight: 600;
+  text-align: left;
+}
+.title-block__right {
+  margin-left: auto;
+  font-family: var(--font-display);
+  font-size: 16px;
+  letter-spacing: 0.04em;
+  text-align: right;
+}
+.title-block__meta {
+  margin-top: 4px;
+  font-size: 15px;
+  color: var(--ink-soft);
+}
+
+/* ---- Notation ---------------------------------------------------------- */
+#sheet {
+  min-height: 200px;
+}
+#sheet svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+/* Each system is its own drawing. A rare wide leap may reach past its slice
+   into the next system's headroom, so nothing is clipped at the seam. */
+#sheet svg.system {
+  overflow: visible;
+}
+.glyph {
+  font-family: "Bravura";
+  fill: var(--ink);
+}
+.staff-line,
+.ledger,
+.barline,
+.stem {
+  stroke: var(--ink);
+}
+.beam {
+  fill: var(--ink);
+}
+.position-mark {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 600;
+  fill: var(--ink);
+}
+.measure-num {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-style: italic;
+  fill: var(--ink-soft);
+}
+.hit {
+  fill: transparent;
+}
+.note {
+  cursor: help;
+}
+.note:hover .notehead,
+.note:hover .accidental {
+  fill: var(--accent);
+}
+.note:hover .stem {
+  stroke: var(--accent);
+}
+
+/* ---- Plate line -------------------------------------------------------- */
+.plate {
+  margin-top: 8px;
+  font-size: 12px;
+  letter-spacing: 0.24em;
+  text-align: center;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+/* ---- Note map ---------------------------------------------------------- */
+.map-section + .map-section {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+}
+.map-section h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
+}
+.map-section h3 span {
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-style: italic;
+  font-weight: 400;
+  color: var(--ink-soft);
+}
+.map-finger {
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 700;
+  fill: var(--accent);
+}
+
+/* ---- Tooltip ----------------------------------------------------------- */
+#tooltip {
+  position: fixed;
+  z-index: 10;
+  padding: 7px 12px 8px;
+  font-size: 15px;
+  line-height: 1.35;
+  white-space: nowrap;
+  color: var(--paper);
+  background: var(--ink);
+  border: 1px solid var(--ochre);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+#tooltip[hidden] {
+  display: none;
+}
+#tooltip strong {
+  font-family: var(--font-display);
+  font-size: 16px;
+  letter-spacing: 0.04em;
+  color: var(--gilt);
+}
+
+@media (max-width: 600px) {
+  .page {
+    padding: 22px 14px 16px;
+  }
+}
+
+@page {
+  margin: 14mm;
+}
+
+@media print {
+  .page {
+    padding: 0;
+    background: #fff;
+    border: 0;
+    box-shadow: none;
+  }
+  /* Pages break between systems, never through one, and the title stays
+     with the first system. */
+  .system,
+  .map-section h3 {
+    break-inside: avoid;
+  }
+  .title-block,
+  .map-section h3 {
+    break-after: avoid;
+  }
+  .ornament,
+  .title-block__meta,
+  .plate {
+    color: #000;
+  }
+  .glyph,
+  .beam {
+    fill: #000;
+  }
+  .staff-line,
+  .ledger,
+  .barline,
+  .stem {
+    stroke: #000;
+  }
+}

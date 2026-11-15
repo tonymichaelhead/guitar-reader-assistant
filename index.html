@@ -4,35 +4,112 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Guitar Reading Assistant</title>
-<link rel="stylesheet" href="styles.css" />
+<link rel="preload" href="assets/fonts/Bravura.woff2" as="font" type="font/woff2" crossorigin />
+<link rel="stylesheet" href="styles/tokens.css" />
+<link rel="stylesheet" href="styles/app.css" />
+<link rel="stylesheet" href="styles/score.css" />
 </head>
 <body>
-<header>
-  <h1>Sight Reading &mdash; Classical Guitar</h1>
-  <label for="position">Position
-    <select id="position">
-      <option value="1">1st position</option>
-      <option value="5" selected>5th position</option>
-      <option value="7">7th position</option>
-      <option value="12">12th position</option>
-    </select>
-  </label>
-  <a href="#" id="cheatLink">Note map</a>
-  <span class="string-group" id="strings">Strings
-    <label><input type="checkbox" class="string-toggle" value="6" checked />6</label>
-    <label><input type="checkbox" class="string-toggle" value="5" checked />5</label>
-    <label><input type="checkbox" class="string-toggle" value="4" checked />4</label>
-    <label><input type="checkbox" class="string-toggle" value="3" checked />3</label>
-    <label><input type="checkbox" class="string-toggle" value="2" checked />2</label>
-    <label><input type="checkbox" class="string-toggle" value="1" checked />1</label>
-  </span>
-  <span class="meta" id="meta"></span>
-  <label for="accidentals"><input type="checkbox" id="accidentals" /> <span id="accidentalsLabel">Random accidentals</span></label>
-  <button id="regen">Generate new</button>
-</header>
-<main id="sheet"></main>
+<div class="app">
+  <header class="masthead">
+    <div class="masthead__title">
+      <p class="masthead__kicker">Studies in Sight-Reading</p>
+      <h1>for the Classical Guitar</h1>
+    </div>
+    <div class="masthead__actions">
+      <div class="segmented" role="radiogroup" aria-label="View">
+        <label><input type="radio" name="view" value="score" checked /><span>Score</span></label>
+        <label><input type="radio" name="view" value="map" /><span>Note map</span></label>
+      </div>
+      <button type="button" class="button button--quiet" id="libraryButton" aria-haspopup="dialog">Library<span class="count" id="libraryCount" hidden></span></button>
+      <button type="button" class="button button--primary" id="regen" aria-keyshortcuts="N" title="New étude (N)">New étude</button>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <div class="panel-wrap">
+      <button type="button" class="panel-toggle" id="panelToggle" aria-expanded="false" aria-controls="panel">
+        <span class="panel-toggle__label">Settings</span>
+        <span class="panel-toggle__summary" id="summary"></span>
+      </button>
+
+      <aside class="panel" id="panel" aria-label="Exercise settings">
+        <fieldset class="group">
+          <legend>Position</legend>
+          <div class="chips chips--positions" id="positions"></div>
+          <label class="switch">
+            <input type="checkbox" role="switch" id="rotate" />
+            <span class="switch__track" aria-hidden="true"></span>
+            <span class="switch__text">Change position every measure</span>
+          </label>
+          <p class="hint" id="positionHint"></p>
+        </fieldset>
+
+        <fieldset class="group">
+          <legend>Strings</legend>
+          <div class="chips chips--strings" id="strings"></div>
+        </fieldset>
+
+        <fieldset class="group">
+          <legend>Note values</legend>
+          <div class="chips chips--values" id="noteValues"></div>
+        </fieldset>
+
+        <fieldset class="group">
+          <legend>Pitch</legend>
+          <label class="switch">
+            <input type="checkbox" role="switch" id="accidentals" />
+            <span class="switch__track" aria-hidden="true"></span>
+            <span class="switch__text">Accidentals</span>
+          </label>
+          <p class="hint">Sharps and flats, written beside the notes.</p>
+        </fieldset>
+
+        <fieldset class="group">
+          <legend>Melody</legend>
+          <div class="segmented segmented--wide" id="melody">
+            <label><input type="radio" name="melody" value="random" /><span>Random</span></label>
+            <label><input type="radio" name="melody" value="musical" /><span>Musical</span></label>
+          </div>
+          <p class="hint" id="melodyHint"></p>
+        </fieldset>
+      </aside>
+    </div>
+
+    <main class="page">
+      <div class="page-tools">
+        <p class="page-tools__status" id="status" role="status"></p>
+        <button type="button" class="button button--quiet" id="saveButton">Save</button>
+        <button type="button" class="button button--quiet" id="pdfButton">Download PDF</button>
+        <button type="button" class="button button--quiet" id="printButton">Print</button>
+      </div>
+      <header class="title-block">
+        <p class="title-block__dedication" id="dedication"></p>
+        <h2 class="title-block__title" id="pieceTitle"></h2>
+        <div class="ornament" aria-hidden="true"><span></span></div>
+        <div class="title-block__lines">
+          <p class="title-block__left" id="lineLeft"></p>
+          <p class="title-block__right" id="lineRight"></p>
+        </div>
+        <p class="title-block__meta" id="meta"></p>
+      </header>
+      <div id="sheet"></div>
+      <footer class="plate" id="plate"></footer>
+    </main>
+  </div>
+</div>
 <div id="tooltip" role="tooltip" hidden></div>
 
-<script src="app.js"></script>
+<dialog class="library" id="library" aria-labelledby="libraryTitle">
+  <header class="library__head">
+    <h2 id="libraryTitle">Saved études</h2>
+    <button type="button" class="button button--quiet" id="libraryClose">Close</button>
+  </header>
+  <p class="library__empty" id="libraryEmpty">Nothing saved yet. Press <em>Save</em> above a study to keep it here.</p>
+  <ul class="library__list" id="libraryList"></ul>
+  <p class="hint library__note">Kept in this browser only. Clearing this site's data removes them.</p>
+</dialog>
+
+<script type="module" src="src/main.js"></script>
 </body>
 </html>

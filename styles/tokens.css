@@ -1,0 +1,110 @@
+/* Design tokens and fonts. See docs/design-system.md. */
+
+@font-face {
+  font-family: "Bravura";
+  src: url("../assets/fonts/Bravura.woff2") format("woff2");
+  font-display: block;
+}
+@font-face {
+  font-family: "EB Garamond";
+  src: url("../assets/fonts/EBGaramond-latin-wght-normal.woff2") format("woff2");
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "EB Garamond";
+  src: url("../assets/fonts/EBGaramond-latin-wght-italic.woff2") format("woff2");
+  font-weight: 400 800;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Playfair Display";
+  src: url("../assets/fonts/PlayfairDisplay-latin-wght-normal.woff2") format("woff2");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Playfair Display";
+  src: url("../assets/fonts/PlayfairDisplay-latin-wght-italic.woff2") format("woff2");
+  font-weight: 400 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+:root {
+  /* Paper and ink. Contrast ratios are listed in docs/design-system.md. */
+  --desk: #dccfae;        /* the surface the page lies on */
+  --paper: #f4ecd8;       /* the printed page */
+  --paper-deep: #e9ddc0;  /* panels */
+  --ink: #2a2118;         /* text and notation */
+  --ink-soft: #5b4733;    /* secondary text, control borders */
+  --accent: #7a2318;      /* oxblood: primary action, "on" state, hover */
+  --accent-deep: #4e150d;
+  --focus: #1f3f6b;       /* Prussian blue: focus rings only */
+  --ochre: #8c6a35;       /* ornaments and rules only, never body text */
+  --gilt: #d9b66a;        /* marks on dark ink */
+  --rule: rgba(42, 33, 24, 0.32);
+
+  --font-display: "Playfair Display", "Libre Caslon Display", Georgia, serif;
+  --font-body: "EB Garamond", Garamond, Georgia, "Times New Roman", serif;
+
+  --target: 44px;         /* minimum size of anything tappable */
+  --radius: 3px;
+  --panel-width: 300px;
+
+  /* Static paper grain: brown speckle from SVG fractal noise. */
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .36 0 0 0 0 .26 0 0 0 0 .13 .9 0 0 0 -.32'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  /* A permanent scrollbar keeps the page width stable while the score re-lays out. */
+  overflow-y: scroll;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 17px;
+  line-height: 1.4;
+  color: var(--ink);
+  background-color: var(--desk);
+  background-image:
+    radial-gradient(ellipse at 50% -10%, rgba(255, 248, 225, 0.55), transparent 65%),
+    var(--grain);
+}
+
+h1, h2, h3, p {
+  margin: 0;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}
+
+/* High contrast and forced colours: drop every texture. */
+@media (prefers-contrast: more), (forced-colors: active) {
+  :root {
+    --grain: none;
+    --paper: #fffdf6;
+    --paper-deep: #fffdf6;
+    --desk: #fffdf6;
+    --ink: #000;
+    --ink-soft: #2a2118;
+  }
+}

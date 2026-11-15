@@ -1,0 +1,14 @@
+{
+  "name": "guitar-reading-assistant",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Random sight-reading studies for classical guitar, engraved in the browser.",
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
