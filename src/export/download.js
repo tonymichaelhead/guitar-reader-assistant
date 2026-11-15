@@ -16,8 +16,13 @@ export function downloadBytes(bytes, filename, type) {
   setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 
-// Countries where Letter, not A4, is the everyday paper size.
-const LETTER_REGIONS = ['US', 'CA', 'MX', 'PH', 'CL', 'CO', 'VE', 'CR', 'GT', 'PA', 'DO', 'PR'];
+// Countries where Letter, not A4, is the everyday paper size: the list in
+// Unicode's CLDR, plus the Dominican Republic. "419" is not a country but
+// Latin America as a whole, which is all that the language "Spanish (Latin
+// America)" says about its reader; most of those readers print on Letter.
+const LETTER_REGIONS = [
+  'US', 'CA', 'MX', 'PH', 'CL', 'CO', 'VE', 'CR', 'GT', 'PA', 'SV', 'NI', 'BZ', 'DO', 'PR', '419'
+];
 
 export function preferredPageSize(language = globalThis.navigator?.language) {
   try {

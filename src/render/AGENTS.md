@@ -3,7 +3,7 @@
 Two halves with different rules:
 
 - `layout.js` computes geometry and must stay free of the DOM so it can be tested in Node (`test/layout.test.js`). Spacing, system breaks, stems, beams and accidental signs are decided here.
-- `draw.js`, `score.js`, `note-map.js` and `tooltip.js` create SVG and DOM nodes. They draw what `layout.js` decided and make no layout decisions of their own.
+- `draw.js`, `score.js` and `note-map.js` create SVG nodes through `el()` in `svg.js`, and with `tooltip.js` the few HTML nodes around them. They draw what `layout.js` decided and make no layout decisions of their own.
 
 SMuFL conventions the code relies on (details in `docs/engraving.md`):
 

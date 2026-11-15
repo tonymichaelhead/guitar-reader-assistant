@@ -28,5 +28,5 @@ The print dialog stays available as the **Print** button, with page breaks betwe
 - There are now two renderers. Anything drawn differently in `draw.js` must be drawn differently in `score-pdf.js` too. Both read the same layout, which keeps the duplication to drawing calls.
 - The PDF's lettering is Times, not the page's Playfair Display and EB Garamond. Matching it would mean embedding fonts.
 - A new notation glyph means adding it to the extraction script and regenerating the outlines.
-- Only the characters of Windows-1252 can be written as text, which covers everything `describe.js` produces.
+- Only the characters of Windows-1252 can be written as text. That covers everything `describe.js` produces except the sharp sign in a written range ("G♯5"), which the PDF writes as "#".
 - If the notation grows much beyond this (several voices, many more glyphs), embedding the font or adopting a library becomes the better choice and this record should be superseded.

@@ -40,7 +40,9 @@ function refreshTools() {
   const onScore = view === 'score';
   saveButton.hidden = !onScore;
   pdfButton.hidden = !onScore;
-  saveButton.disabled = savedId !== null;
+  // "Saved" is a state shown on the button, not a disabled control: a button
+  // that disables itself under the finger that pressed it drops keyboard focus.
+  saveButton.setAttribute('aria-disabled', String(savedId !== null));
   saveButton.textContent = savedId === null ? 'Save' : 'Saved';
   libraryCount.textContent = String(saved.length);
   libraryCount.hidden = saved.length === 0;
@@ -52,10 +54,12 @@ function refreshTools() {
 function draw() {
   // Paper is always laid out at full width, whatever the window happens to be.
   viewWidth = printing ? PAGE.maxWidth : viewWidthFor(sheet.clientWidth);
+  refreshTools();
+  // Until the fonts have loaded there is no study yet, and nothing to draw.
+  if (view === 'score' && !score) return;
   updateTitleBlock({ view, score, settings });
   if (view === 'score') renderScore(score, sheet, viewWidth);
   else renderNoteMap(settings, sheet, viewWidth);
-  refreshTools();
 }
 
 function showScore(next, id = null) {
@@ -84,7 +88,9 @@ function settingsChanged() {
 function setView(next) {
   view = next;
   for (const input of viewInputs) input.checked = input.value === view;
-  if (view === 'score' && scoreIsStale) newEtude();
+  // Back from the note map before the fonts brought the first study: make one
+  // now, so the page does not keep showing the map under "Score".
+  if (view === 'score' && (scoreIsStale || !score)) newEtude();
   else draw();
 }
 
@@ -108,7 +114,7 @@ const newId = () =>
   (globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
 
 function saveCurrent() {
-  if (savedId !== null) return;
+  if (!score || savedId !== null) return;
   const id = newId();
   const result = addToLibrary(score, { id, savedAt: Date.now() });
   if (result.ok) {
@@ -129,33 +135,52 @@ const library = initLibraryDialog({
     showScore(entry.score, entry.id);
     announce(`${studyName(entry.score)} opened from the library.`);
   },
+  // The outcome is said twice: inside the dialog, which is all that can be
+  // heard or seen while it is open, and on the page for after it closes.
   onDelete(entry) {
     const result = removeFromLibrary(entry.id);
-    if (!result.ok) {
-      announce('Not deleted: this browser is not letting the site change its storage.');
-      return;
-    }
+    const outcome = result.ok
+      ? `${studyName(entry.score)} deleted from the library.`
+      : 'Not deleted: this browser is not letting the site change its storage.';
+    library.say(outcome);
+    announce(outcome);
+    if (!result.ok) return;
     saved = result.entries;
     if (savedId === entry.id) savedId = null; // still on screen, and can be saved again
     library.update(saved, savedId);
-    announce(`${studyName(entry.score)} deleted from the library.`);
     refreshTools();
   }
 });
 
+// Take the stored list as it now is, so that "Saved" and the count never
+// describe a study that is no longer there. The list can change behind this
+// page's back: another tab saves or deletes, or the browser clears the site's
+// data.
+// Returns what there is to tell the reader, if anything.
+function syncLibrary() {
+  saved = loadLibrary();
+  let news = '';
+  if (savedId !== null && !saved.some(entry => entry.id === savedId)) {
+    savedId = null;
+    news = `${studyName(score)} is no longer in the library, and can be saved again.`;
+    announce(news);
+  }
+  refreshTools();
+  return news;
+}
+
 // Another tab of the app saved or deleted something (a null key means the
-// whole storage was cleared). Take the list as it now is, so that "Saved" and
-// the count never describe a study that is no longer there.
+// whole storage was cleared).
 window.addEventListener('storage', event => {
   if (event.key !== null && event.key !== LIBRARY_KEY) return;
-  saved = loadLibrary();
-  if (savedId !== null && !saved.some(entry => entry.id === savedId)) savedId = null;
-  refreshTools();
+  const news = syncLibrary();
   library.refresh(saved, savedId);
+  if (news && library.isOpen()) library.say(news);
 });
 
 // ---- Export --------------------------------------------------------------
 function exportPdf() {
+  if (!score) return;
   try {
     const bytes = scoreToPdf(score, { text: describeScore(score), pageSize: preferredPageSize() });
     downloadBytes(bytes, `${fileStem(score)}.pdf`, 'application/pdf');
@@ -181,12 +206,14 @@ saveButton.addEventListener('click', saveCurrent);
 pdfButton.addEventListener('click', exportPdf);
 byId('printButton').addEventListener('click', () => window.print());
 byId('libraryButton').addEventListener('click', () => {
-  saved = loadLibrary(); // another tab may have changed it
-  refreshTools();
+  const news = syncLibrary(); // not every change arrives as a storage event
   library.show(saved, savedId);
+  if (news) library.say(news);
 });
 
 document.addEventListener('keydown', event => {
+  // Some synthetic key events carry no key at all, and a held key repeats.
+  if (typeof event.key !== 'string' || event.repeat) return;
   if (event.key.toLowerCase() !== 'n' || event.ctrlKey || event.metaKey || event.altKey) return;
   if (document.querySelector('dialog[open]')) return;
   requestNewEtude();
@@ -194,16 +221,16 @@ document.addEventListener('keydown', event => {
 
 // The layout depends on the width available, so re-lay out when it changes.
 new ResizeObserver(() => {
-  if (score && !printing && viewWidthFor(sheet.clientWidth) !== viewWidth) draw();
+  if (!printing && viewWidthFor(sheet.clientWidth) !== viewWidth) draw();
 }).observe(sheet);
 
 window.addEventListener('beforeprint', () => {
   printing = true;
-  if (score) draw();
+  draw();
 });
 window.addEventListener('afterprint', () => {
   printing = false;
-  if (score) draw();
+  draw();
 });
 
 // The notation is drawn with font glyphs, so wait for the fonts; if they fail
@@ -213,4 +240,7 @@ const fonts = [
   document.fonts.load('600 17px "Playfair Display"'),
   document.fonts.load('17px "EB Garamond"')
 ];
-Promise.allSettled(fonts).then(newEtude);
+refreshTools();
+// A study opened from the library while the fonts were loading stays; it is
+// only drawn again, now with its glyphs.
+Promise.allSettled(fonts).then(() => (score ? draw() : newEtude()));

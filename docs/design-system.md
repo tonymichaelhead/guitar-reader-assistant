@@ -44,7 +44,7 @@ Section headings in the panel are small letter-spaced capitals. Hints are italic
 - 900 px or narrower: the panel folds behind a **Settings** button that shows a one-line summary of the current settings.
 - **New étude** is always visible in the masthead. From the note map it returns to the score.
 - **Library** sits beside it and opens the list of saved studies, with a count of how many there are.
-- **Page tools** (Save, Download PDF, Print) sit at the top of the page itself, because they act on the study shown there. A status line beside them reports what just happened and is announced to screen readers (`role="status"`).
+- **Page tools** (Save, Download PDF, Print) sit at the top of the page itself, because they act on the study shown there. A status line beside them reports what just happened and is announced to screen readers (`role="status"`). Where the row is too narrow for both, the status moves to its own line under the buttons; the row measures itself with a container query, because beside the settings panel the page can be narrower than a phone held sideways.
 - Anything tappable is at least 44 px tall.
 
 ## Controls
@@ -59,7 +59,7 @@ Choose the control by what the setting is, not by how it looks:
 
 Rules:
 
-- Every change applies immediately and is saved. There is no Save button.
+- Every change to a setting applies immediately and is remembered; settings have no Save button. (The Save button on the page keeps a study, not the settings.)
 - A selected chip or segment is filled with ink **and** shows a gilt mark under its label, so the state never depends on colour alone. A switch shows its state by the knob's position.
 - A group can never be empty: the last chip left on is disabled until another is switched on.
 - Focus is shown with `:focus-visible` as a 2 px ring in `--focus`.
@@ -72,12 +72,16 @@ Rules:
 | Primary (`.button--primary`, oxblood) | The one main action: **New étude** |
 | Quiet (`.button--quiet`, paper) | Everything else: Library, Save, Download PDF, Print, and the buttons inside the library |
 
-- A quiet button that reports a finished state ("Saved") is disabled, flat and dashed, so it reads as a label rather than something to press.
-- **Deleting needs two presses.** The first press arms the button ("Really delete?", filled oxblood); the second deletes. It disarms after four seconds or when focus leaves it. There is no undo, so there is no single-press delete.
+- A quiet button that reports a finished state ("Saved") is flat and dashed, so it reads as a label rather than something to press. It is marked `aria-disabled`, not `disabled`: a button that disables itself under the finger that pressed it drops keyboard focus to the top of the page.
+- **Deleting needs two presses.** The first press arms the button ("Really delete?", filled oxblood); a second press at least half a second later deletes. A double-click is one gesture: on an unarmed button it only arms, and as the confirming press it deletes that row without arming the next one. A held key does not repeat. The button stays armed until focus leaves it or something else in the dialog is pressed; there is no timer, so nobody loses the confirmation for being slow. It is wide enough for the longer label from the start, so arming moves nothing. There is no undo, so there is no single-press delete.
 
 ## Library dialog
 
-A native modal `<dialog>`, opened with `showModal()`: the browser traps focus inside it, closes it on Escape and returns focus to the Library button. A click on the backdrop also closes it. Each row shows the study's name, a one-line description, when it was saved, and Open and Delete buttons. A footnote says plainly that studies are kept in this browser only.
+A native modal `<dialog>`, opened with `showModal()`: the browser traps focus inside it, closes it on Escape and returns focus to the Library button. A press that starts and ends on the backdrop also closes it; a click in the dialog's own margins or a text selection dragged out of it does not. The second half of a double-click on the Library button is ignored wherever it lands, so the dialog it opened stays open. Each row shows the study's name, a one-line description, when it was saved, and Open and Delete buttons. A footnote says plainly that studies are kept in this browser only.
+
+- While the dialog is open the page behind it is inert and does not scroll, so the page's status line would reach nobody. The dialog has its own (`role="status"`), which says what was deleted or why it could not be.
+- After a delete, focus goes to the Delete button of the row that took its place, and the list keeps its scroll position.
+- In a very short window the whole dialog scrolls, instead of squeezing the list between the heading and the footnote; its status line then sticks to the foot of the window.
 
 ## Texture
 
@@ -89,7 +93,7 @@ Textures are removed for `prefers-contrast: more`, for `forced-colors`, and in p
 
 ## Print
 
-Printing shows only the page: black on white, with the masthead, settings panel, page tools and dialog hidden. The score is re-laid out at full width just before printing (`beforeprint`) and restored afterwards, so a narrow window does not produce a narrow printout. Each system is its own SVG with `break-inside: avoid`, so a page break never cuts through a staff.
+Printing shows only the page: black on white, with the masthead, settings panel, page tools and dialog hidden. Every ink token is set to black for print, the diamond in the title ornament is told to print although it is a background, and advice that only works on a screen (`.screen-only`, such as "hover or tap a note") is left out. The score is re-laid out at full width just before printing (`beforeprint`) and restored afterwards, so a narrow window does not produce a narrow printout. Each system is its own SVG with `break-inside: avoid`, so a page break never cuts through a staff.
 
 ## The page as a print
 

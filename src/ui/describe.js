@@ -57,9 +57,11 @@ export function describeNoteMap(settings) {
     right: positionsText(settings.positions),
     meta: [
       settings.accidentals ? 'with accidentals' : 'natural notes',
-      stringsText(settings.strings),
-      'hover or tap a note for its strings and frets'
+      stringsText(settings.strings)
     ].join(' · '),
+    // Kept apart from meta: it only makes sense on a screen, so a printed
+    // page leaves it out.
+    hint: 'hover or tap a note for its strings and frets',
     plate: 'G. R. A.'
   };
 }

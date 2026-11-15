@@ -1,6 +1,8 @@
 # Fonts
 
-All three families are licensed under the SIL Open Font License 1.1. The licence texts are in `licenses/`. The files are shipped exactly as downloaded: Bravura and Playfair Display carry Reserved Font Names, so a modified copy (subset, converted or renamed) could not keep the name.
+All three families are licensed under the SIL Open Font License 1.1. The licence texts are in `licenses/`. The files are shipped exactly as downloaded, and this project changes nothing in them: Bravura and Playfair Display carry Reserved Font Names, so a copy modified here (subset, converted or renamed) could not keep the name. `Bravura.woff2` is the whole font as its copyright holder publishes it. The EB Garamond and Playfair Display files are the Latin subsets that Fontsource serves, taken as served.
+
+`licenses/Bravura-OFL.txt` is `redist/OFL.txt` from the Bravura repository, byte for byte. Its copyright line gives the year 2015; the notice inside the font file itself (version 1.482) gives a later year. The file is kept as upstream publishes it.
 
 | File | Family | Use | Source |
 |---|---|---|---|

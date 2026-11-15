@@ -17,7 +17,7 @@ There is no lint, type-check or build command.
 
 - **No dependencies, bundler, framework or TypeScript.** The browser loads the files in `src/` as they are. See `docs/decisions/0001`.
 - **`src/music/` is pure.** No DOM, no `Math.random`, no clock. All randomness comes through the `rng` argument, so a seed reproduces a score. See `docs/decisions/0003`.
-- **`src/render/layout.js` is pure too.** It turns a Score into coordinates. Only `draw.js`, `score.js`, `note-map.js` and `tooltip.js` touch the DOM.
+- **`src/render/layout.js` is pure too.** It turns a Score into coordinates. Only `svg.js`, `draw.js`, `score.js`, `note-map.js` and `tooltip.js` touch the DOM.
 - **Notation is drawn by hand with Bravura glyphs.** Do not add a notation library. See `docs/decisions/0002`.
 - **Fonts in `assets/fonts/` ship unmodified, with their licence texts.** Bravura and Playfair Display have Reserved Font Names: do not subset, convert or rename them.
 
@@ -66,7 +66,7 @@ export function randomMelody({ pools, rhythm, maxLeapSteps }, rng) {
 **Ask first**
 
 - Adding a dependency, a build step or a new top-level directory.
-- Changing the Score shape, or a localStorage key or stored format (`settings.js`, `library.js`, `score-codec.js`). People's saved studies must keep opening: a format change needs a new codec version that still reads the old one.
+- Changing the Score shape, or a localStorage key or stored format (`settings.js`, `library.js`, `score-codec.js`). People's saved studies must keep opening: a format change needs a new codec version that still reads the old one. The same goes for removing a note from a position in `fretboard.js`: a stored study is checked against those pools when it is read.
 - Changing what Random mode produces. It is deliberately the original algorithm.
 - Replacing or adding fonts.
 

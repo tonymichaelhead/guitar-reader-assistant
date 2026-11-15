@@ -48,6 +48,11 @@ test('the note map is described by the current settings', () => {
   assert.equal(text.number, '');
   assert.equal(text.right, 'Positions II · VII');
   assert.match(text.meta, /string 1/);
+  // The advice about hovering is for the screen only, so it is not part of
+  // the line that also gets printed.
+  assert.match(text.hint, /hover or tap/);
+  assert.doesNotMatch(text.meta, /hover/);
+  assert.equal(describeScore(scoreWith({}, 1)).hint, undefined);
 });
 
 test('short forms: list row, settings summary, name and file name', () => {
@@ -65,6 +70,14 @@ test('paper size follows the reader’s region: Letter in North America, A4 else
   assert.equal(preferredPageSize('en-US'), 'letter');
   assert.equal(preferredPageSize('en'), 'letter'); // "en" alone most likely means the US
   assert.equal(preferredPageSize('fr-CA'), 'letter');
+  assert.equal(preferredPageSize('es-MX'), 'letter');
+  assert.equal(preferredPageSize('es-SV'), 'letter');
+  assert.equal(preferredPageSize('es-NI'), 'letter');
+  assert.equal(preferredPageSize('en-BZ'), 'letter');
+  assert.equal(preferredPageSize('es-419'), 'letter'); // "Spanish (Latin America)" names no country
+  assert.equal(preferredPageSize('es-AR'), 'a4');
+  assert.equal(preferredPageSize('pt-BR'), 'a4');
+  assert.equal(preferredPageSize('es'), 'a4'); // "es" alone most likely means Spain
   assert.equal(preferredPageSize('en-GB'), 'a4');
   assert.equal(preferredPageSize('de'), 'a4');
   assert.equal(preferredPageSize('ja-JP'), 'a4');

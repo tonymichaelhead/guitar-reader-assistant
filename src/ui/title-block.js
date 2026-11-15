@@ -19,7 +19,16 @@ export function updateTitleBlock({ view, score, settings }) {
 
   byId('lineLeft').textContent = text.left;
   byId('lineRight').textContent = text.right;
-  byId('meta').textContent = text.meta;
+  const meta = byId('meta');
+  meta.textContent = text.meta;
+  if (text.hint) {
+    // The separator sits inside the span, so that hiding the hint on paper
+    // leaves no dot hanging at the end of the line.
+    const hint = document.createElement('span');
+    hint.className = 'screen-only';
+    hint.textContent = ` · ${text.hint}`;
+    meta.append(hint);
+  }
   byId('plate').textContent = text.plate;
 }
 

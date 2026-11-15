@@ -48,6 +48,12 @@ Dependencies point one way: `music/` imports nothing from the other directories,
 - `draw.js` — primitives that draw one thing each: staff, clef, time signature, note, beam, barline.
 - `score.js`, `note-map.js` — the two views.
 - `tooltip.js` — the fingering tooltip.
+- `svg.js` — `el()`, the one helper that creates SVG nodes.
+
+### `src/state/`
+
+- `settings.js` — every setting, its default, its validation (`sanitize`) and its storage.
+- `library.js` — the saved studies in localStorage: `loadLibrary`, `addToLibrary`, `removeFromLibrary`.
 
 ### `src/export/`
 
@@ -91,7 +97,7 @@ A **pitch** is `{ letter, octave, alter, value, fingerings }`. `value` is `octav
 { v: 1, seed, tonality, settings, measures: [{ p: position, n: [[value, alter, dur], ...] }] }
 ```
 
-The notes are stored, not just the seed, so a saved study still opens unchanged after the generators have been retuned. What can be worked out again is left out: a note's start, a measure's number, and each pitch's letter, octave and fingerings, which `decodeScore` takes from the fretboard. `decodeScore` returns `null` for anything it cannot read and never throws; entries it cannot read are left in storage untouched, so a newer version's studies survive an older one. A study in quarter notes takes about 1 KB.
+The notes are stored, not just the seed, so a saved study still opens unchanged after the generators have been retuned. What can be worked out again is left out: a note's start, a measure's number, and each pitch's letter, octave and fingerings, which `decodeScore` takes from the fretboard. That makes `fretboard.js` part of the stored format: every stored note must still be in the pool of its measure's position when the study is read, so taking a note out of a position would make the saved studies that use it stop appearing. `decodeScore` returns `null` for anything it cannot read and never throws; entries it cannot read are left in storage untouched, so a newer version's studies survive an older one. A study in quarter notes takes about 1 KB.
 
 Every save and delete re-reads the stored list first, so two tabs of the app never overwrite each other's studies, and `main.js` listens for the `storage` event so that a change made in another tab shows up in this one.
 
@@ -104,7 +110,7 @@ Every save and delete re-reads the stored list first, so two tabs of the app nev
 - The same settings and seed always give the same Score.
 - Layout never changes the music, and drawing never changes the layout.
 - A saved or exported study is described by `score.settings`, the settings it was generated with, not by the settings panel.
-- Storage is best-effort: the library and the settings never throw when localStorage is missing, blocked or full. They report it, and the app carries on.
+- Storage is best-effort: the library and the settings never throw when localStorage is missing, blocked or full, and the app carries on. A study that cannot be saved or deleted is reported in the status line. Settings that cannot be stored are simply not remembered, and a library that cannot be read shows as empty.
 
 ## How a change usually travels
 
