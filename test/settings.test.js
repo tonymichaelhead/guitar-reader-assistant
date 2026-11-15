@@ -66,3 +66,19 @@ test('missing, corrupt or blocked storage falls back to the defaults', () => {
   assert.deepEqual(loadSettings(blocked), sanitize(null));
   assert.doesNotThrow(() => saveSettings(sanitize(null), blocked));
 });
+
+test('a browser that refuses even a look at localStorage still gets the defaults', () => {
+  // With cookies blocked or in a sandboxed frame, reading the global throws.
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    get() { throw new Error('The operation is insecure.'); }
+  });
+  try {
+    assert.deepEqual(loadSettings(), sanitize(null));
+    assert.doesNotThrow(() => saveSettings(sanitize(null)));
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'localStorage', original);
+    else delete globalThis.localStorage;
+  }
+});

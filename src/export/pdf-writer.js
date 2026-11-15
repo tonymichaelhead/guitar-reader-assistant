@@ -36,6 +36,40 @@ const SHAPE_UNIT = 1000;
 
 const ALIGN_SHIFT = { left: 0, center: 0.5, right: 1 };
 
+// PDF 1.4 allows a line that is not stream data no more than 255 characters
+// (section 3.4 of the reference). ISO 32000 dropped the rule and viewers do
+// not hold a file to it, but this file says it is 1.4. Lines stop one
+// character short, so the rule is kept whether or not the line end counts.
+const LINE_LIMIT = 254;
+
+// The most of a string that goes on one line, in characters of the file: in
+// hex, fifty UTF-16 characters. It leaves room on the line for the string's
+// key in front of it.
+const STRING_RUN = 200;
+
+// The parts of an object with spaces between them, on one line while they fit
+// and on several when they do not. Any white space separates two tokens in
+// PDF, so a line end serves as well as a space. A part is never broken, so
+// none may be longer than a line.
+function wrapped(parts) {
+  const lines = [];
+  for (const part of parts) {
+    const last = lines.length - 1;
+    if (last >= 0 && lines[last].length + 1 + part.length <= LINE_LIMIT) lines[last] += ` ${part}`;
+    else lines.push(part);
+  }
+  return lines.join('\n');
+}
+
+// Delimiters stay with the first and the last of the parts they hold, of
+// which there is at least one.
+function enclosed(open, parts, close) {
+  const inside = [...parts];
+  inside[0] = open + inside[0];
+  inside[inside.length - 1] += close;
+  return inside;
+}
+
 // PDF has no exponent notation, and a thousandth of a point is finer than any
 // printer. Trailing zeros are dropped and a value that rounds to zero loses
 // its sign. Anything that is not a finite number is a bug in the caller, and
@@ -112,12 +146,24 @@ const hexString = codes => `<${codes.map(code => hex(code, 2)).join('')}>`;
 // Text outside a page (the title) is not in a font's encoding. It is either
 // PDFDocEncoding, which agrees with printable ASCII, or UTF-16BE behind a
 // byte-order mark, which can say anything.
+//
+// It is returned as parts for `wrapped`. A literal string is a single part,
+// because white space inside it is text. White space between hex digits means
+// nothing, so a hex string comes in runs that may go on separate lines, and a
+// literal longer than a run is written in hex as well.
 function textString(string) {
-  if (/^[\x20-\x7E]*$/.test(string)) return `(${string.replace(/[\\()]/g, '\\$&')})`;
+  const literal = `(${string.replace(/[\\()]/g, '\\$&')})`;
+  if (/^[\x20-\x7E]*$/.test(string) && literal.length <= STRING_RUN) return [literal];
   let digits = 'FEFF';
   for (let i = 0; i < string.length; i++) digits += hex(string.charCodeAt(i), 4);
-  return `<${digits}>`;
+  const runs = [];
+  for (let i = 0; i < digits.length; i += STRING_RUN) runs.push(digits.slice(i, i + STRING_RUN));
+  return enclosed('<', runs, '>');
 }
+
+// A dictionary entry whose value is text. The key stays on the line where its
+// value begins.
+const textEntry = (key, string) => enclosed(`/${key} `, textString(string), '');
 
 const PATH_TOKEN = /([A-Za-z])|([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)|[^\s,]/g;
 const PATH_COMMANDS = {
@@ -177,7 +223,9 @@ function pathOperators(d) {
 }
 
 // A stream's /Length is exact, and does not count the line end before
-// "endstream". The data is ASCII, so characters are bytes.
+// "endstream". The data is ASCII, so characters are bytes. The data is not
+// held to the line limit, and the dictionary cannot reach it: its longest
+// entry is a form's box, four numbers of twenty-two characters at most.
 function streamObject(entries, lines) {
   const data = lines.join('\n');
   return `<< ${entries}/Length ${data.length} >>\nstream\n${data}\nendstream`;
@@ -199,22 +247,30 @@ function formObject({ box, operators }) {
 }
 
 function infoObject(title) {
-  const entries = title ? [`/Title ${textString(title)}`] : [];
-  entries.push(`/Producer ${textString(PRODUCER)}`);
-  return `<< ${entries.join(' ')} >>`;
+  const entries = title ? textEntry('Title', title) : [];
+  return wrapped(['<<', ...entries, ...textEntry('Producer', PRODUCER), '>>']);
 }
 
-// One kind of resource (fonts or shapes) as a dictionary entry: the names a
-// page uses and the objects they stand for. Nothing at all when none is used.
+// The page tree: every page in order, a reference to each being one part.
+function pagesObject(pageRefs) {
+  const kids = pageRefs.map(ref => `${ref} 0 R`);
+  return wrapped(['<< /Type /Pages', ...enclosed('/Kids [', kids, ']'), `/Count ${kids.length}`, '>>']);
+}
+
+// One kind of resource (fonts or shapes) as the parts of a dictionary entry:
+// the names a page uses and the objects they stand for. Nothing at all when
+// none is used.
 function resourceEntry(key, items) {
-  if (!items.length) return '';
-  return `/${key} << ${items.map(({ name, ref }) => `/${name} ${ref} 0 R`).join(' ')} >> `;
+  if (!items.length) return [];
+  return [`/${key} <<`, ...items.map(({ name, ref }) => `/${name} ${ref} 0 R`), '>>'];
 }
 
 function pageObject({ box }, { parent, contents, fonts, shapes }) {
-  const resources = resourceEntry('Font', fonts) + resourceEntry('XObject', shapes);
-  return `<< /Type /Page /Parent ${parent} 0 R /MediaBox [${box}] ` +
-    `/Resources << ${resources}>> /Contents ${contents} 0 R >>`;
+  return wrapped([
+    '<< /Type /Page', `/Parent ${parent} 0 R`, `/MediaBox [${box}]`,
+    '/Resources <<', ...resourceEntry('Font', fonts), ...resourceEntry('XObject', shapes), '>>',
+    `/Contents ${contents} 0 R`, '>>'
+  ]);
 }
 
 // The file: header, the numbered objects, then a cross-reference table giving
@@ -348,10 +404,9 @@ export function createPdf({ title = '' } = {}) {
     const shapeRefs = shapeNames.map((shape, i) =>
       ({ item: shape, name: shapes.get(shape).resource, ref: firstShape + i }));
 
-    const kids = pages.map((_, i) => `${pageRef(i)} 0 R`).join(' ');
     const objects = [
       '<< /Type /Catalog /Pages 2 0 R >>',
-      `<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>`,
+      pagesObject(pages.map((_, i) => pageRef(i))),
       infoObject(String(title ?? '')),
       ...fonts.map(fontObject),
       ...shapeNames.map(name => formObject(shapes.get(name))),

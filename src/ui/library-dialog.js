@@ -100,6 +100,17 @@ export function initLibraryDialog({ onOpen, onDelete }) {
       render(entries, currentId);
       if (dialog.open) close.focus();
     },
+    // Redraw because the list changed elsewhere (another tab). Nothing here
+    // was pressed, so an open dialog keeps focus on the button that had it,
+    // or on Close if that row is gone.
+    refresh(entries, currentId) {
+      if (!dialog.open) return;
+      const focused = document.activeElement?.getAttribute?.('aria-label');
+      render(entries, currentId);
+      const again = focused && [...list.querySelectorAll('button')]
+        .find(node => node.getAttribute('aria-label') === focused);
+      (again || close).focus();
+    },
     close() {
       if (dialog.open) dialog.close();
     }

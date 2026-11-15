@@ -42,15 +42,17 @@ function parsePdf(bytes) {
 
 const refs = text => [...text.matchAll(/\/(\w+) (\d+) 0 R/g)].map(m => ({ name: m[1], ref: Number(m[2]) }));
 
+// A long dictionary or array runs over several lines, so what is inside one
+// is read up to its closing delimiter, line ends and all.
 function resourcesOf(pageBody, key) {
-  const match = new RegExp(`/${key} << (.*?) >>`).exec(pageBody);
+  const match = new RegExp(`/${key} <<\\s([^>]*)>>`).exec(pageBody);
   return match ? refs(match[1]) : [];
 }
 
 // Each page of a parsed file: its dictionary, its content stream and the
 // resources it declares.
 function pagesOf(pdf) {
-  const kids = /\/Kids \[(.*?)\]/.exec(pdf.objects.get(2).body)[1];
+  const kids = /\/Kids \[([^\]]*)\]/.exec(pdf.objects.get(2).body)[1];
   return [...kids.matchAll(/(\d+) 0 R/g)].map(([, number]) => {
     const { body } = pdf.objects.get(Number(number));
     const contents = Number(/\/Contents (\d+) 0 R/.exec(body)[1]);
@@ -105,6 +107,73 @@ function sampleDoc() {
 }
 
 const streamsOf = pdf => [...pdf.objects.values()].filter(o => o.stream).map(o => o.stream);
+
+// PDF 1.4 allows a line that is not stream data no more than 255 characters
+// (section 3.4 of the reference). The line end is counted here, so that the
+// file keeps the rule however a reader counts.
+const LINE_LIMIT = 255;
+
+// The lines of a file with the data of every stream taken out.
+function linesOutsideStreams(pdf) {
+  const emptied = streamsOf(pdf).reduce(
+    (file, { data }) => file.replace(`stream\n${data}\nendstream`, 'stream\nendstream'), pdf.file);
+  return emptied.split('\n');
+}
+
+const longestLine = pdf => Math.max(...linesOutsideStreams(pdf).map(line => line.length + 1));
+
+// A file's title as a viewer reads it: a literal string with its escapes, or
+// UTF-16BE in hex, where white space between the digits means nothing.
+function titleOf(pdf) {
+  const info = pdf.objects.get(3).body;
+  const literal = /\/Title\s+\(((?:\\.|[^\\)])*)\)/.exec(info);
+  if (literal) return literal[1].replace(/\\(.)/g, '$1');
+  const digits = /\/Title\s+<FEFF([^>]*)>/.exec(info)[1].replace(/\s+/g, '');
+  assert.match(digits, /^([0-9A-F]{4})*$/);
+  return (digits.match(/.{4}/g) || []).map(unit => String.fromCharCode(parseInt(unit, 16))).join('');
+}
+
+// Every object is where the cross-reference table says, and every stream is
+// as long as it says: the file can be read back whatever lines it was cut into.
+function assertReadable(pdf) {
+  for (const [number, object] of pdf.objects) {
+    assert.ok(object.labelled, `entry ${number} does not point at "${number} 0 obj"`);
+    if (!object.stream) continue;
+    assert.equal(object.stream.rest, '\nendstream');
+    assert.equal(object.stream.data.length, object.stream.length);
+  }
+}
+
+// A document of `pages` pages, each showing its own number.
+function numberedPages(pages, options) {
+  const doc = createPdf(options);
+  for (let i = 0; i < pages; i++) doc.addPage(...A4).text(String(i + 1), 50, 50);
+  return doc;
+}
+
+// One page that uses all four fonts and `shapes` different shapes.
+function crowdedPage(shapes) {
+  const doc = createPdf();
+  const page = doc.addPage(...A4);
+  FONTS.forEach((font, i) => page.text(font, 50, 700 - 20 * i, { font }));
+  for (let i = 1; i <= shapes; i++) {
+    doc.defineShape(`shape${i}`, `M 0 0 L ${i} 0 L 0 ${i} Z`, [0, 0, i, i]);
+    page.shape(`shape${i}`, 10 * i, 100, 1);
+  }
+  return doc;
+}
+
+// A page and a shape with the longest numbers the writer will write, for the
+// dictionaries that are not wrapped: the boxes of a page and of a form.
+function vastPage() {
+  const doc = createPdf();
+  doc.defineShape('vast', WEDGE, [-4e20, -4e20, 4e20, 4e20]);
+  doc.addPage(9.9e20, 9.9e20).shape('vast', -9.9e20, -9.9e20, 1);
+  return doc;
+}
+
+const ACCENTED_TITLE ='Étude de concert pour la main gauche seule, d’après un prélude';
+const ASCII_TITLE = 'A study (the third) \\ in thirds, '.repeat(9);
 
 test('the file opens with the PDF 1.4 header and a binary comment, and is otherwise ASCII', () => {
   const bytes = sampleDoc().toBytes();
@@ -244,6 +313,103 @@ test('a title with parentheses, backslashes or accents is written safely', () =>
   assert.match(hex, /^<FEFF([0-9A-F]{4})+>$/);
   const units = hex.slice(5, -1).match(/.{4}/g).map(h => parseInt(h, 16));
   assert.equal(String.fromCharCode(...units), 'Étude – F♯');
+});
+
+test('no line outside a stream passes 255 characters, whatever the document holds', () => {
+  const docs = [
+    sampleDoc(),
+    numberedPages(32),
+    numberedPages(40, { title: ACCENTED_TITLE }),
+    numberedPages(400),
+    numberedPages(1, { title: 'é'.repeat(60) }),
+    numberedPages(1, { title: ASCII_TITLE }),
+    numberedPages(1, { title: '\u{1D11E}'.repeat(500) }),
+    crowdedPage(12),
+    crowdedPage(40),
+    vastPage()
+  ];
+  // Titles of every length around the ones that no longer fit on a line:
+  // plain letters, characters that are escaped, and letters written in hex.
+  for (let length = 180; length <= 270; length++) {
+    docs.push(numberedPages(1, { title: 'x'.repeat(length) }));
+    docs.push(numberedPages(1, { title: '('.repeat(Math.floor(length / 2)) }));
+    docs.push(numberedPages(1, { title: 'é'.repeat(Math.floor(length / 4)) }));
+  }
+  for (const doc of docs) {
+    const pdf = parsePdf(doc.toBytes());
+    assert.ok(longestLine(pdf) <= LINE_LIMIT, `a line of ${longestLine(pdf)} characters`);
+    assertReadable(pdf);
+  }
+});
+
+test('stream data is not held to the line limit: a long text stays one line', () => {
+  const doc = createPdf();
+  doc.addPage(...A4).text('x'.repeat(300), 50, 50);
+  const pdf = parsePdf(doc.toBytes());
+  assert.ok(pagesOf(pdf)[0].content.length > 600);
+  assert.ok(!pagesOf(pdf)[0].content.includes('\n'));
+  assert.ok(longestLine(pdf) <= LINE_LIMIT);
+});
+
+test('a page tree too long for one line is broken between references and lists every page in order', () => {
+  for (const total of [32, 40, 400]) {
+    const pdf = parsePdf(numberedPages(total).toBytes());
+    const tree = pdf.objects.get(2).body;
+    assert.ok(tree.includes('\n'), 'the page tree is still on one line');
+    // With its line ends turned back into spaces it is the one-line form:
+    // nothing was cut but the white space between two references.
+    assert.match(tree.replace(/\n/g, ' '),
+      new RegExp(`^<< /Type /Pages /Kids \\[(\\d+ 0 R ?){${total}}\\] /Count ${total} >>$`));
+    const pages = pagesOf(pdf);
+    assert.equal(pages.length, total);
+    pages.forEach((page, i) => {
+      const digits = [...String(i + 1)].map(digit => digit.charCodeAt(0).toString(16)).join('');
+      assert.ok(page.content.endsWith(` <${digits}> Tj ET`), `page ${i + 1} is out of order`);
+    });
+    assert.equal(count(pdf.file, /\/Type \/Page /g), total);
+  }
+});
+
+test('a title too long for one line is written in hex over several lines, and reads back whole', () => {
+  const titles = [
+    ACCENTED_TITLE, ASCII_TITLE, 'é'.repeat(50), 'é'.repeat(60), 'x'.repeat(199), 'x'.repeat(1000),
+    `${'x'.repeat(300)} ♯ \u{1D11E} (a\\b)`
+  ];
+  for (const title of titles) {
+    const pdf = parsePdf(numberedPages(1, { title }).toBytes());
+    const info = pdf.objects.get(3).body;
+    assert.ok(info.includes('\n'), 'the info dictionary is still on one line');
+    assert.equal(titleOf(pdf), title);
+    // Each key is on the line where its value begins, and there is still
+    // nothing but the title and the producer.
+    assert.match(info, /^<< \/Title <FEFF[0-9A-F\s]*>\s\/Producer \(Guitar Reading Assistant\)\s>>$/);
+  }
+});
+
+test('a title that fits on one line is written on one, as before', () => {
+  const short = ['Study No. 3', 'x'.repeat(198), 'Étude No. 417', 'é'.repeat(49), 'Étude – F♯', '(a\\b)'];
+  for (const title of short) {
+    const pdf = parsePdf(numberedPages(1, { title }).toBytes());
+    assert.match(pdf.objects.get(3).body, /^<< \/Title [(<].*[)>] \/Producer \(Guitar Reading Assistant\) >>$/);
+    assert.equal(titleOf(pdf), title);
+  }
+});
+
+test('a page with more resources than fit on one line declares every one of them', () => {
+  for (const shapes of [12, 40]) {
+    const pdf = parsePdf(crowdedPage(shapes).toBytes());
+    const [page] = pagesOf(pdf);
+    assert.ok(page.body.includes('\n'), 'the page dictionary is still on one line');
+    assert.deepEqual(page.fonts.map(font => font.name), ['F1', 'F2', 'F3', 'F4']);
+    assert.equal(page.shapes.length, shapes);
+    const drawn = [...page.content.matchAll(/\/(\w+) Do/g)].map(m => m[1]);
+    assert.deepEqual(page.shapes.map(shape => shape.name), drawn);
+    for (const { ref } of page.shapes) assert.match(pdf.objects.get(ref).body, /\/Subtype \/Form/);
+    // Line ends fall only where a space was.
+    assert.match(page.body.replace(/\n/g, ' '), new RegExp(
+      '^<< /Type /Page /Parent 2 0 R /MediaBox \\[0 0 595\\.276 841\\.89\\] /Resources << ' +
+      `/Font << (/F\\d \\d+ 0 R ){4}>> /XObject << (/S\\d+ \\d+ 0 R ){${shapes}}>> >> /Contents \\d+ 0 R >>$`));
+  }
 });
 
 test('identical calls give byte-identical files', () => {

@@ -7,7 +7,7 @@ import { GLYPH, GLYPH_SIZE, MUSIC_FONT } from './render/glyphs.js';
 import { PAGE, viewWidthFor } from './render/layout.js';
 import { renderNoteMap } from './render/note-map.js';
 import { renderScore } from './render/score.js';
-import { addToLibrary, loadLibrary, removeFromLibrary } from './state/library.js';
+import { LIBRARY_KEY, addToLibrary, loadLibrary, removeFromLibrary } from './state/library.js';
 import { loadSettings, saveSettings } from './state/settings.js';
 import { initControls, initPanelToggle } from './ui/controls.js';
 import { describeScore, fileStem, studyName } from './ui/describe.js';
@@ -141,6 +141,17 @@ const library = initLibraryDialog({
     announce(`${studyName(entry.score)} deleted from the library.`);
     refreshTools();
   }
+});
+
+// Another tab of the app saved or deleted something (a null key means the
+// whole storage was cleared). Take the list as it now is, so that "Saved" and
+// the count never describe a study that is no longer there.
+window.addEventListener('storage', event => {
+  if (event.key !== null && event.key !== LIBRARY_KEY) return;
+  saved = loadLibrary();
+  if (savedId !== null && !saved.some(entry => entry.id === savedId)) savedId = null;
+  refreshTools();
+  library.refresh(saved, savedId);
 });
 
 // ---- Export --------------------------------------------------------------

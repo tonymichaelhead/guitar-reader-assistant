@@ -39,19 +39,23 @@ export function sanitize(raw) {
 }
 
 // Storage can be missing or blocked (private windows), so both directions are
-// best-effort and the app must work without them.
-export function loadSettings(storage = globalThis.localStorage) {
+// best-effort and the app must work without them. Where it is blocked, merely
+// reading the localStorage global can throw, so the default is looked up
+// inside each try block and not in the parameter list.
+const resolve = storage => (storage === undefined ? globalThis.localStorage : storage);
+
+export function loadSettings(storage) {
   try {
-    return sanitize(JSON.parse(storage.getItem(STORAGE_KEY)));
+    return sanitize(JSON.parse(resolve(storage).getItem(STORAGE_KEY)));
   } catch {
     return sanitize(null);
   }
 }
 
-export function saveSettings(settings, storage = globalThis.localStorage) {
+export function saveSettings(settings, storage) {
   try {
     const { measures, maxLeapSteps, ...saved } = settings;
-    storage.setItem(STORAGE_KEY, JSON.stringify(saved));
+    resolve(storage).setItem(STORAGE_KEY, JSON.stringify(saved));
   } catch {
     // Nothing to do: the settings simply will not be remembered.
   }

@@ -93,6 +93,8 @@ A **pitch** is `{ letter, octave, alter, value, fingerings }`. `value` is `octav
 
 The notes are stored, not just the seed, so a saved study still opens unchanged after the generators have been retuned. What can be worked out again is left out: a note's start, a measure's number, and each pitch's letter, octave and fingerings, which `decodeScore` takes from the fretboard. `decodeScore` returns `null` for anything it cannot read and never throws; entries it cannot read are left in storage untouched, so a newer version's studies survive an older one. A study in quarter notes takes about 1 KB.
 
+Every save and delete re-reads the stored list first, so two tabs of the app never overwrite each other's studies, and `main.js` listens for the `storage` event so that a change made in another tab shows up in this one.
+
 **Layout** (`layoutScore`): systems, each with its staff position, its measures, and for every note its `x`, `y`, ledger lines, accidental sign and stem, plus the beams of each measure.
 
 ## Rules that hold everywhere

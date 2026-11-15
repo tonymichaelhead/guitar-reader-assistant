@@ -96,13 +96,15 @@ function parsePdf(bytes) {
 
 const refs = text => [...text.matchAll(/\/(\w+) (\d+) 0 R/g)].map(m => ({ name: m[1], ref: Number(m[2]) }));
 
+// A long dictionary or array runs over several lines, so what is inside one
+// is read up to its closing delimiter, line ends and all.
 function resourcesOf(pageBody, key) {
-  const match = new RegExp(`/${key} << (.*?) >>`).exec(pageBody);
+  const match = new RegExp(`/${key} <<\\s([^>]*)>>`).exec(pageBody);
   return match ? refs(match[1]) : [];
 }
 
 function pagesOf(pdf) {
-  const kids = /\/Kids \[(.*?)\]/.exec(pdf.objects.get(2).body)[1];
+  const kids = /\/Kids \[([^\]]*)\]/.exec(pdf.objects.get(2).body)[1];
   return [...kids.matchAll(/(\d+) 0 R/g)].map(([, number]) => {
     const { body } = pdf.objects.get(Number(number));
     const contents = Number(/\/Contents (\d+) 0 R/.exec(body)[1]);
@@ -115,9 +117,25 @@ function pagesOf(pdf) {
   });
 }
 
+// The lines of a file with the data of every stream taken out. PDF 1.4 allows
+// these, and only these, no more than 255 characters.
+function linesOutsideStreams(pdf) {
+  const streams = [...pdf.objects.values()].filter(object => object.stream);
+  const emptied = streams.reduce(
+    (file, { stream }) => file.replace(`stream\n${stream.data}\nendstream`, 'stream\nendstream'), pdf.file);
+  return emptied.split('\n');
+}
+
+// A file's title as a viewer reads it: UTF-16BE in hex, where white space
+// between the digits means nothing.
+function titleOf(pdf) {
+  const digits = /\/Title <FEFF([^>]*)>/.exec(pdf.objects.get(3).body)[1].replace(/\s+/g, '');
+  return String.fromCharCode(...digits.match(/.{4}/g).map(unit => parseInt(unit, 16)));
+}
+
 // The checks of test/pdf-writer.test.js, on a finished score: a viewer can
-// find every object, every stream is as long as it says, and each page
-// declares exactly what it uses.
+// find every object, every stream is as long as it says, no line is too long
+// and each page declares exactly what it uses.
 function assertWellFormed(bytes) {
   assert.ok(bytes instanceof Uint8Array);
   assert.equal(latin1(bytes.subarray(0, 10)), '%PDF-1.4\n%');
@@ -143,6 +161,10 @@ function assertWellFormed(bytes) {
     assert.equal(stream.rest, '\nendstream');
     assert.equal(stream.data.length, stream.length);
     assert.ok(!stream.dict.includes('/Filter'));
+  }
+  // The line end is counted too, so the rule holds however a reader counts.
+  for (const line of linesOutsideStreams(pdf)) {
+    assert.ok(line.length + 1 <= 255, `a line of ${line.length} characters: ${line.slice(0, 40)}...`);
   }
 
   const pages = pagesOf(pdf);
@@ -377,9 +399,25 @@ test('the same score and text give byte-identical files', () => {
 
 test('the file is titled with the name and number of the study', () => {
   const { pdf } = exportOf(scoreWith({}, 1));
-  const hex = /\/Title <FEFF([0-9A-F]*)>/.exec(pdf.objects.get(3).body)[1];
-  const title = String.fromCharCode(...hex.match(/.{4}/g).map(unit => parseInt(unit, 16)));
-  assert.equal(title, 'Étude No. 417');
+  assert.equal(titleOf(pdf), 'Étude No. 417');
+  assert.ok(!pdf.objects.get(3).body.includes('\n'));
+});
+
+test('a long title is written over several lines of the file, none too long, and still names it', () => {
+  const title = 'Étude de concert pour la main gauche seule, d’après un prélude';
+  for (const pageSize of PAGE_SIZE_NAMES) {
+    for (const overrides of [{}, DENSE]) {
+      const exported = exportOf(scoreWith(overrides, 1), { pageSize, text: { ...TEXT, title } });
+      const pdf = assertWellFormed(exported.bytes);
+      assert.equal(titleOf(pdf), `${title} ${TEXT.number}`);
+      assert.ok(pdf.objects.get(3).body.includes('\n'));
+      // On the page it is one line of capitals, set smaller to fit.
+      const [page] = exported.pages;
+      const drawn = page.items.find(item => item.kind === 'text' && item.string === title.toUpperCase());
+      assert.ok(drawn && drawn.size < 22);
+      assertInsideMargins(exported.pages);
+    }
+  }
 });
 
 test('an unknown paper size is refused', () => {
