@@ -1,8 +1,9 @@
 // The words that go with a score: its title, the lines under it and the plate
 // number. Pure text, shared by the on-screen title block, the saved-scores
 // list, and the PDF export, so all three always say the same thing.
-import { ROMAN, poolFor } from '../music/fretboard.js';
-import { pitchName } from '../music/pitch.js';
+import { ROMAN, notePool } from '../music/fretboard.js';
+import { FLAT_ORDER, SHARP_ORDER, pitchName } from '../music/pitch.js';
+import { DEFAULT_KEY, keyById } from '../music/theory.js';
 
 const list = words =>
   words.length < 2 ? words.join('') : `${words.slice(0, -1).join(', ')} & ${words[words.length - 1]}`;
@@ -13,9 +14,46 @@ const stringsText = strings =>
 const positionsText = positions =>
   `Position${positions.length > 1 ? 's' : ''} ${positions.map(p => ROMAN[p]).join(' · ')}`;
 
+// What the accidentals setting means for the notes. Random mode has no key,
+// so the setting chooses how the black keys are written; in Musical mode the
+// key decides that, and the setting only says whether notes from outside the
+// key may appear.
+const ACCIDENTALS_LONG = { none: 'natural notes', sharps: 'with sharps', flats: 'with flats' };
+const ACCIDENTALS_SHORT = { none: 'naturals', sharps: 'sharps', flats: 'flats' };
+// Settings normally arrive through sanitize, but a score can be described
+// before that (straight from the codec), so the old on-off value still reads.
+const spelling = settings => {
+  if (settings.accidentals === true) return 'sharps';
+  // Compared by name, not looked up: "constructor" is a property of every object.
+  return settings.accidentals === 'sharps' || settings.accidentals === 'flats' ? settings.accidentals : 'none';
+};
+const chromatic = settings => spelling(settings) !== 'none';
+const accidentalsText = settings => (settings.melody === 'musical'
+  ? (chromatic(settings) ? 'with chromatic notes' : 'notes of the key only')
+  : ACCIDENTALS_LONG[spelling(settings)]);
+const accidentalsBrief = settings => (settings.melody === 'musical'
+  ? (chromatic(settings) ? 'chromatic' : 'in key')
+  : ACCIDENTALS_SHORT[spelling(settings)]);
+const keyLabel = settings => (keyById(settings.key) || keyById(DEFAULT_KEY)).label;
+
+const COUNT_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven'];
+
+// A key's name as it is said aloud: "F sharp minor". The signs are for the
+// eye; a screen reader may skip them or read them out as symbols.
+export const spokenKey = label => label.replace('♯', ' sharp').replace('♭', ' flat');
+
+// A key and its signature in a sentence: "D major: two sharps, F♯ C♯."
+export function describeKey(key) {
+  const count = Math.abs(key.signature);
+  if (count === 0) return `${key.label}: no sharps or flats.`;
+  const flat = key.signature < 0;
+  const signs = (flat ? FLAT_ORDER : SHARP_ORDER).slice(0, count).map(l => l + (flat ? '♭' : '♯'));
+  return `${key.label}: ${COUNT_WORDS[count]} ${flat ? 'flat' : 'sharp'}${count > 1 ? 's' : ''}, ${signs.join(' ')}.`;
+}
+
 // Written range covered by a set of positions under the given settings.
 function rangeText(positions, settings) {
-  const pools = positions.map(p => poolFor(p, settings));
+  const pools = positions.map(p => notePool(p, settings));
   const low = pools.map(pool => pool[0]).reduce((a, b) => (b.value < a.value ? b : a));
   const high = pools.map(pool => pool[pool.length - 1]).reduce((a, b) => (b.value > a.value ? b : a));
   return `${pitchName(low)}–${pitchName(high)} as written`;
@@ -40,7 +78,7 @@ export function describeScore(score) {
     meta: [
       `${score.measures.length} measures in 4/4`,
       `${list(settings.noteValues)} notes`,
-      settings.accidentals ? 'with accidentals' : 'natural notes',
+      accidentalsText(settings),
       stringsText(settings.strings),
       rangeText(used, settings)
     ].join(' · '),
@@ -56,9 +94,10 @@ export function describeNoteMap(settings) {
     left: 'Numbers are left-hand fingers; 0 is an open string',
     right: positionsText(settings.positions),
     meta: [
-      settings.accidentals ? 'with accidentals' : 'natural notes',
+      settings.melody === 'musical' ? keyLabel(settings) : null,
+      accidentalsText(settings),
       stringsText(settings.strings)
-    ].join(' · '),
+    ].filter(Boolean).join(' · '),
     // Kept apart from meta: it only makes sense on a screen, so a printed
     // page leaves it out.
     hint: 'hover or tap a note for its strings and frets',
@@ -73,7 +112,7 @@ export function describeBriefly(score) {
     score.tonality ? score.tonality : 'random',
     positionsText(positionsUsed(score)),
     `${list(settings.noteValues)} notes`,
-    settings.accidentals ? 'accidentals' : 'naturals'
+    accidentalsBrief(settings)
   ].join(' · ');
 }
 
@@ -83,8 +122,8 @@ export function summarizeSettings(settings) {
     `Pos. ${settings.positions.map(p => ROMAN[p]).join(', ')}${settings.rotatePositions ? ' (rotating)' : ''}`,
     stringsText(settings.strings),
     list(settings.noteValues),
-    settings.accidentals ? 'accidentals' : 'naturals',
-    settings.melody
+    settings.melody === 'musical' ? keyLabel(settings) : 'random',
+    accidentalsBrief(settings)
   ].join(' · ');
 }
 

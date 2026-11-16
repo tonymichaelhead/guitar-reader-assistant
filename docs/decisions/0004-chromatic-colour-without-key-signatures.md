@@ -1,7 +1,7 @@
 # 4. Musical mode uses chromatic colour, not key signatures
 
 Date: 2026-11-15
-Status: Accepted
+Status: Superseded by record 6
 
 ## Context
 

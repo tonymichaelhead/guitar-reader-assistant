@@ -22,6 +22,12 @@ export function drawClef(svg, x, bottom) {
   svg.appendChild(glyph(GLYPH.gClef, x, bottom - S, 'clef'));
 }
 
+// The signs of a key signature from layout.js: like an accidental, each is
+// centred on its line or space, here with its left edge at `x`.
+export function drawKeySignature(svg, signs) {
+  for (const { sign, x, y } of signs) svg.appendChild(glyph(GLYPH[sign], x, y, 'keysig'));
+}
+
 // 4/4: each digit is two spaces tall and centred on its baseline.
 export function drawTimeSignature(svg, x, top) {
   for (const y of [top + S, top + 3 * S]) {

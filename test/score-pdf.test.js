@@ -3,8 +3,9 @@ import { test } from 'node:test';
 import { OUTLINES, UNITS_PER_EM } from '../src/export/glyph-outlines.js';
 import { createPdf, textWidth } from '../src/export/pdf-writer.js';
 import { PAGE_SIZES, scoreToPdf } from '../src/export/score-pdf.js';
-import { ROMAN } from '../src/music/fretboard.js';
-import { spell, staffStep } from '../src/music/pitch.js';
+import { ROMAN, keyPool, notePool } from '../src/music/fretboard.js';
+import { pitchName, spell, staffStep } from '../src/music/pitch.js';
+import { inKey, keyById, signatureOf } from '../src/music/theory.js';
 import { GLYPH, GLYPH_SIZE, METRICS, SPACE } from '../src/render/glyphs.js';
 import { PAGE, layoutScore } from '../src/render/layout.js';
 import { allNotes, scoreWith, seeds, settingsWith } from './helpers.js';
@@ -32,20 +33,21 @@ const NOTE_VALUE_SETS = [
   ['quarter'], ['eighth'], ['sixteenth'], ['quarter', 'eighth'], ['quarter', 'sixteenth'],
   ['eighth', 'sixteenth'], ['quarter', 'eighth', 'sixteenth']
 ];
-const DENSE = { noteValues: ['sixteenth'], accidentals: true };
+const DENSE = { noteValues: ['sixteenth'], accidentals: 'sharps' };
 const VARIED = [
   {},
   { noteValues: ['eighth'] },
   DENSE,
-  { noteValues: ['quarter', 'eighth', 'sixteenth'], accidentals: true, melody: 'musical' },
+  { noteValues: ['quarter', 'eighth', 'sixteenth'], accidentals: 'sharps', melody: 'musical' },
   { noteValues: ['eighth', 'sixteenth'], positions: [1, 7, 12], rotatePositions: true },
-  { noteValues: ['quarter', 'eighth'], positions: ALL_POSITIONS, rotatePositions: true, accidentals: true }
+  { noteValues: ['quarter', 'eighth'], positions: ALL_POSITIONS, rotatePositions: true, accidentals: 'sharps' }
 ];
 
 // A score written out by hand, for notes no generator would give: each measure
 // is a list of [written pitch value, duration in sixteenths], with 'flat' as
-// a third member to spell a black key as a flat.
-function handMade(bars) {
+// a third member to spell a black key as a flat. Without `key` the score has
+// no key at all, like a study saved before keys existed.
+function handMade(bars, key) {
   const measures = bars.map((bar, i) => {
     let start = 0;
     const notes = bar.map(([value, dur, prefer]) => {
@@ -55,9 +57,52 @@ function handMade(bars) {
     });
     return { number: i + 1, position: 5, notes };
   });
-  return { seed: 1, settings: settingsWith({}), tonality: null, measures };
+  const score = { seed: 1, settings: settingsWith({}), tonality: null, measures };
+  return key ? { ...score, key, tonality: keyById(key).label } : score;
 }
 const PLAIN_BAR = [[59, 4], [59, 4], [59, 4], [59, 4]]; // four quarters on the middle line
+
+// The generator for keys is another module's work, so these tests put a
+// generated score into a key by hand. Every note keeps its value, its rhythm
+// and its fingerings, and takes the spelling the key gives it (keyPool): a
+// score drawn from all twelve notes then has notes inside the key and outside
+// it. With `chromatic: false` each note from outside the key is first moved to
+// the nearest note of the key.
+function inKeyOf(score, keyId, { chromatic = true } = {}) {
+  const key = keyById(keyId);
+  const measures = score.measures.map(measure => {
+    const pool = keyPool(measure.position, { strings: score.settings.strings }, key);
+    const scale = pool.filter(p => inKey(key, p));
+    const nearest = value => scale.reduce((best, p) =>
+      (Math.abs(p.value - value) < Math.abs(best.value - value) ? p : best));
+    return {
+      ...measure,
+      notes: measure.notes.map(n => {
+        const spelled = pool.find(p => p.value === n.pitch.value);
+        return { ...n, pitch: chromatic || inKey(key, spelled) ? spelled : nearest(n.pitch.value) };
+      })
+    };
+  });
+  return { ...score, key: keyId, tonality: key.label, measures };
+}
+
+// A sharp key, a flat key and the two keys of four sharps, each with notes
+// from outside the key among those inside it.
+const KEYED = [
+  ['D', { noteValues: ['quarter', 'eighth'], accidentals: 'sharps' }],
+  ['Gm', { noteValues: ['eighth', 'sixteenth'], accidentals: 'flats', positions: [1, 7, 12], rotatePositions: true }],
+  ['E', DENSE],
+  ['C#m', { noteValues: ['quarter', 'eighth', 'sixteenth'], positions: ALL_POSITIONS, rotatePositions: true, accidentals: 'sharps' }]
+];
+// Each makes the score of a seed: the studies without a key, then those with one.
+const STUDIES = [
+  ...VARIED.map(overrides => seed => scoreWith(overrides, seed)),
+  ...KEYED.map(([keyId, overrides]) => seed => inKeyOf(scoreWith(overrides, seed), keyId))
+];
+// Where the signs of a signature stand, in the order they are added, in steps
+// above the bottom staff line: sharps F5 C5 G5 D5 A4 E5 B4, flats B4 E5 A4 D5
+// G4 C5 F4.
+const SIGN_STEPS = { sharp: [8, 5, 9, 6, 3, 7, 4], flat: [4, 7, 3, 6, 2, 5, 1] };
 
 const latin1 = bytes => Buffer.from(bytes).toString('latin1');
 const count = (text, pattern) => (text.match(pattern) || []).length;
@@ -297,6 +342,12 @@ const uprights = (items, weight, scale) => items.filter(i =>
 const noteheads = items => glyphs(items, 'noteheadBlack');
 const stems = (items, scale) => uprights(items, 'stem', scale);
 const layoutNotes = system => system.bars.flatMap(bar => bar.notes);
+// The key signature of a system as drawn: the sharps and flats that come
+// before its first notehead. A sign drawn after a notehead is an accidental.
+function keySignatureOf(system) {
+  const firstHead = system.items.findIndex(item => item.kind === 'glyph' && item.name === 'noteheadBlack');
+  return glyphs(system.items.slice(0, firstHead), 'sharp', 'flat', 'natural');
+}
 
 // How far text reaches above and below its baseline, in ems. Capitals,
 // figures and ascenders of the Times faces stay under 0.7 and an accented
@@ -362,6 +413,16 @@ function assertComplete(score, { layout, scale, pages, systems }) {
   const everything = pages.flatMap(page => page.items);
   assert.equal(noteheads(everything).length, notes.length);
   assert.equal(glyphs(systems[0].items, 'timeSig4').length, 2);
+  // Every system opens with the signature of the score's key, and a score
+  // without a key with none. Every other sign belongs to a note.
+  const signature = signatureOf(keyById(score.key));
+  const sign = signature > 0 ? 'sharp' : 'flat';
+  for (const system of systems) {
+    assert.deepEqual(keySignatureOf(system).map(item => item.name), Array(Math.abs(signature)).fill(sign));
+  }
+  const accidentals = layout.systems.flatMap(layoutNotes).filter(note => note.accidental).length;
+  assert.equal(
+    glyphs(items, 'sharp', 'flat', 'natural').length, accidentals + Math.abs(signature) * layout.systems.length);
   // Systems after the first say which measure they start at, in order.
   assert.deepEqual(
     texts(items, 'Times-Italic').map(t => t.string),
@@ -375,9 +436,9 @@ test('the two paper sizes are Letter and A4, in points', () => {
 });
 
 test('a score exports as a well-formed PDF file', () => {
-  for (const overrides of VARIED) {
+  for (const study of STUDIES) {
     for (const pageSize of PAGE_SIZE_NAMES) {
-      const bytes = scoreToPdf(scoreWith(overrides, 3), { text: TEXT, pageSize });
+      const bytes = scoreToPdf(study(3), { text: TEXT, pageSize });
       const pdf = assertWellFormed(bytes);
       // Only the built-in faces and the outlines: nothing is embedded.
       assert.ok(!/FontFile|FontDescriptor|\/Image/.test(pdf.file));
@@ -387,11 +448,14 @@ test('a score exports as a well-formed PDF file', () => {
 });
 
 test('the same score and text give byte-identical files', () => {
-  for (const overrides of VARIED) {
-    const bytes = scoreToPdf(scoreWith(overrides, 9), { text: TEXT, pageSize: 'a4' });
-    assert.deepEqual(scoreToPdf(scoreWith(overrides, 9), { text: { ...TEXT }, pageSize: 'a4' }), bytes);
-    assert.notDeepEqual(scoreToPdf(scoreWith(overrides, 10), { text: TEXT, pageSize: 'a4' }), bytes);
+  for (const study of STUDIES) {
+    const bytes = scoreToPdf(study(9), { text: TEXT, pageSize: 'a4' });
+    assert.deepEqual(scoreToPdf(study(9), { text: { ...TEXT }, pageSize: 'a4' }), bytes);
+    assert.notDeepEqual(scoreToPdf(study(10), { text: TEXT, pageSize: 'a4' }), bytes);
   }
+  // The key is part of the score: the same notes in another key are another file.
+  const inD = inKeyOf(scoreWith({}, 9), 'D', { chromatic: false });
+  assert.notDeepEqual(scoreToPdf({ ...inD, key: 'G' }, { text: TEXT }), scoreToPdf(inD, { text: TEXT }));
   // Letter is the default size.
   const score = scoreWith({}, 1);
   assert.deepEqual(scoreToPdf(score, { text: TEXT }), scoreToPdf(score, { text: TEXT, pageSize: 'letter' }));
@@ -452,10 +516,10 @@ test('systems that do not fit on a page go to the next, whole', () => {
 });
 
 test('every system, measure and note is drawn exactly once across the pages', () => {
-  for (const overrides of VARIED) {
+  for (const study of STUDIES) {
     for (const pageSize of PAGE_SIZE_NAMES) {
       for (const seed of seeds(4)) {
-        const score = scoreWith(overrides, seed);
+        const score = study(seed);
         assertComplete(score, exportOf(score, { pageSize }));
       }
     }
@@ -480,10 +544,10 @@ test('systems keep the spacing of the screen, and later pages start at the top m
 });
 
 test('a page takes as many whole slots as fit above the plate line, and no more', () => {
-  for (const overrides of VARIED) {
+  for (const study of STUDIES) {
     for (const pageSize of PAGE_SIZE_NAMES) {
       for (const seed of seeds(4)) {
-        const { scale, systemsByPage } = exportOf(scoreWith(overrides, seed), { pageSize });
+        const { scale, systemsByPage } = exportOf(study(seed), { pageSize });
         const depth = SLOT_DEPTH * scale;
         systemsByPage.forEach((systems, p) => {
           for (const system of systems) {
@@ -505,7 +569,7 @@ test('a page takes as many whole slots as fit above the plate line, and no more'
 });
 
 test('eight systems break five and three on both paper sizes, whatever the notes', () => {
-  const low = { positions: [1], noteValues: ['eighth', 'sixteenth'], accidentals: true };
+  const low = { positions: [1], noteValues: ['eighth', 'sixteenth'], accidentals: 'sharps' };
   for (const overrides of [DENSE, low]) {
     for (const pageSize of PAGE_SIZE_NAMES) {
       for (const seed of seeds(25)) {
@@ -588,12 +652,22 @@ test('ink that rises out of the first slot of a page pushes that page\'s systems
 });
 
 test('everything drawn stays inside the page margins', () => {
-  const high = { positions: [12], noteValues: ['eighth', 'sixteenth'], accidentals: true };
-  const low = { positions: [1], noteValues: ['eighth', 'sixteenth'], accidentals: true };
-  for (const overrides of [...VARIED, high, low]) {
+  const high = { positions: [12], noteValues: ['eighth', 'sixteenth'], accidentals: 'sharps' };
+  const low = { positions: [1], noteValues: ['eighth', 'sixteenth'], accidentals: 'sharps' };
+  // The same in keys: A major has the sign that reaches highest above the
+  // staff, and B flat major two flats.
+  const studies = [
+    ...STUDIES,
+    ...[high, low].flatMap(overrides => [
+      seed => scoreWith(overrides, seed),
+      seed => inKeyOf(scoreWith(overrides, seed), 'A'),
+      seed => inKeyOf(scoreWith({ ...overrides, accidentals: 'flats' }, seed), 'Bb')
+    ])
+  ];
+  for (const study of studies) {
     for (const pageSize of PAGE_SIZE_NAMES) {
       for (const seed of seeds(6)) {
-        assertInsideMargins(exportOf(scoreWith(overrides, seed), { pageSize }).pages);
+        assertInsideMargins(exportOf(study(seed), { pageSize }).pages);
       }
     }
   }
@@ -604,12 +678,12 @@ test('every combination of settings exports whole, well formed and inside the pa
   for (const seed of seeds(3)) {
     for (const melody of ['random', 'musical']) {
       for (const noteValues of NOTE_VALUE_SETS) {
-        for (const accidentals of [false, true]) {
+        for (const accidentals of ['none', 'sharps']) {
           scores.push(scoreWith({ noteValues, melody, accidentals }, seed));
         }
       }
       const rotating = { positions: ALL_POSITIONS, rotatePositions: true, melody };
-      scores.push(scoreWith({ ...rotating, noteValues: NOTE_VALUE_SETS.at(-1), accidentals: true }, seed));
+      scores.push(scoreWith({ ...rotating, noteValues: NOTE_VALUE_SETS.at(-1), accidentals: 'sharps' }, seed));
       for (const string of [1, 2, 3, 4, 5, 6]) {
         scores.push(scoreWith({ strings: [string], melody, noteValues: ['quarter', 'eighth'] }, seed));
         scores.push(scoreWith({ ...rotating, strings: [string], noteValues: ['eighth', 'sixteenth'] }, seed));
@@ -677,10 +751,65 @@ test('the G clef sits on the second line from the bottom, and the time signature
   }
 });
 
-test('each notehead sits on the line or space of its pitch, higher notes higher on the page', () => {
-  for (const overrides of VARIED) {
+test('the key signature opens every system on every page, each sign on its own line or space', () => {
+  const dense = { noteValues: ['sixteenth'], accidentals: 'sharps' };
+  const cases = [['E', dense, 'sharp', 4], ['C#m', dense, 'sharp', 4], ['Gm', dense, 'flat', 2], ['G', {}, 'sharp', 1]];
+  for (const [keyId, overrides, sign, count] of cases) {
     for (const pageSize of PAGE_SIZE_NAMES) {
-      const score = scoreWith(overrides, 6);
+      const score = inKeyOf(scoreWith(overrides, 5), keyId);
+      const { systems, systemsByPage, scale, layout } = exportOf(score, { pageSize });
+      // Dense studies run over two pages: the signature is on the second too.
+      if (overrides === dense) assert.ok(systemsByPage.length > 1 && systemsByPage.every(page => page.length > 0));
+      assert.equal(systems.length, layout.systems.length);
+
+      systems.forEach((system, s) => {
+        const signs = keySignatureOf(system);
+        const placed = layout.systems[s];
+        assert.deepEqual(signs.map(item => item.name), Array(count).fill(sign));
+        signs.forEach((item, i) => {
+          // From the staff alone: so many half spaces above the bottom line.
+          assert.ok(near(item.y, system.staff[4].y1 + SIGN_STEPS[sign][i] * (SPACE / 2) * scale));
+          // And where the layout put it, its left edge at its x.
+          assert.ok(near(item.x, MARGIN.left + placed.keySignature[i].x * scale));
+          assert.ok(near(item.y, system.staff[0].y1 - (placed.keySignature[i].y - placed.top) * scale));
+        });
+
+        // Clef, signature, then the time signature on the first system, each
+        // clear of the one before; then the first note.
+        const head = glyphs(system.items, 'gClef', 'sharp', 'flat', 'timeSig4', 'noteheadBlack');
+        const opening = ['gClef', ...Array(count).fill(sign), ...(s === 0 ? ['timeSig4', 'timeSig4'] : [])];
+        assert.deepEqual(head.slice(0, opening.length + 1).map(item => item.name), [...opening, 'noteheadBlack']);
+        const [clef] = head;
+        assert.ok(inkBox(signs[0])[0] - inkBox(clef)[2] >= SPACE * scale - 0.002);
+        for (let i = 1; i < count; i++) assert.ok(inkBox(signs[i])[0] >= inkBox(signs[i - 1])[2] - 0.002);
+        const next = head[1 + count]; // the upper 4, or the first notehead
+        assert.ok(inkBox(next)[0] - inkBox(signs.at(-1))[2] >= SPACE * scale - 0.002);
+      });
+      assertInsideMargins(exportOf(score, { pageSize }).pages);
+    }
+  }
+  // The top sign of E major is on the top line, the first flat on the middle line.
+  const { systems: [inE] } = exportOf(inKeyOf(scoreWith({}, 1), 'E'));
+  assert.ok(near(keySignatureOf(inE)[0].y, inE.staff[0].y1));
+  const { systems: [inF] } = exportOf(inKeyOf(scoreWith({}, 1), 'F'));
+  assert.ok(near(keySignatureOf(inF)[0].y, inF.staff[2].y1));
+});
+
+test('a study without a key, or in a key without sharps or flats, has no signature', () => {
+  const generated = scoreWith(DENSE, 2);
+  const { key, ...saved } = generated; // as a study saved before keys existed
+  const bare = scoreToPdf(saved, { text: TEXT });
+  for (const score of [generated, saved, { ...saved, key: null }, { ...saved, key: 'C' }, { ...saved, key: 'Am' }]) {
+    for (const system of exportOf(score).systems) assert.deepEqual(keySignatureOf(system), []);
+    // The same file, byte for byte, whichever way the key is absent.
+    assert.deepEqual(scoreToPdf(score, { text: TEXT }), bare);
+  }
+});
+
+test('each notehead sits on the line or space of its pitch, higher notes higher on the page', () => {
+  for (const study of STUDIES) {
+    for (const pageSize of PAGE_SIZE_NAMES) {
+      const score = study(6);
       const { systems, scale, layout } = exportOf(score, { pageSize });
       const notes = allNotes(score);
       let n = 0;
@@ -734,6 +863,7 @@ test('an accidental ends a quarter of a space before its notehead, at the same h
       if (item.kind !== 'glyph') continue;
       if (item.name === 'noteheadBlack') head = item;
       if (!['sharp', 'flat', 'natural'].includes(item.name)) continue;
+      if (head === null) continue; // before the first note: the key signature
       const advance = OUTLINES[item.name].advance * item.scale;
       assert.ok(near(item.x + advance, head.x - 0.25 * SPACE * scale));
       assert.equal(item.y, head.y);
@@ -745,11 +875,17 @@ test('an accidental ends a quarter of a space before its notehead, at the same h
   // F sharp, F natural, B flat, B natural: one of each sign, two of the last.
   const bar = [[54, 4], [53, 4], [58, 4, 'flat'], [59, 4]];
   assert.deepEqual(signsOf(exportOf(handMade([bar]))), [['sharp', 'natural', 'flat', 'natural']]);
+  // In D major the F sharp is the signature's and takes no sign of its own.
+  assert.deepEqual(signsOf(exportOf(handMade([bar], 'D'))), [['natural', 'flat', 'natural']]);
+  // F sharp again after the natural takes its sharp; after the barline, nothing.
+  const back = [[53, 4], [54, 4], [54, 4], [61, 4]];
+  assert.deepEqual(signsOf(exportOf(handMade([back, back], 'D'))), [['natural', 'sharp', 'natural', 'sharp']]);
 
   let total = 0;
-  for (const overrides of [DENSE, VARIED[3]]) {
+  const studies = [seed => scoreWith(DENSE, seed), seed => scoreWith(VARIED[3], seed), ...STUDIES.slice(VARIED.length)];
+  for (const study of studies) {
     for (const seed of seeds(3)) {
-      const exported = exportOf(scoreWith(overrides, seed));
+      const exported = exportOf(study(seed));
       const expected = exported.layout.systems.map(system =>
         layoutNotes(system).map(note => note.accidental).filter(Boolean));
       assert.deepEqual(signsOf(exported), expected);
@@ -911,6 +1047,10 @@ class FakeElement {
     return child;
   }
 
+  append(...children) {
+    this.children.push(...children);
+  }
+
   replaceChildren(...children) {
     this.children = children;
   }
@@ -945,8 +1085,8 @@ function screenItems(node) {
   return [{ kind: 'glyph', name, x: number('x') - shift * advance, y: number('y') }];
 }
 
-// The systems of a score as src/render/score.js draws them on screen.
-async function onScreen(score) {
+// Runs `draw` with that stand-in for the page, and returns what it returns.
+async function withFakeDom(draw) {
   globalThis.document = {
     createElementNS: (namespace, name) => new FakeElement(name),
     createElement: name => new FakeElement(name),
@@ -955,23 +1095,37 @@ async function onScreen(score) {
   };
   globalThis.window = { addEventListener() {} };
   try {
-    const { renderScore } = await import('../src/render/score.js');
-    const container = new FakeElement('div');
-    renderScore(score, container, PAGE.maxWidth);
-    return container.children[0].children.map(svg => svg.children.flatMap(screenItems));
+    return await draw();
   } finally {
     delete globalThis.document;
     delete globalThis.window;
   }
 }
 
+// The systems of a score as src/render/score.js draws them on screen: the
+// SVG elements of each, and what each of them draws.
+const svgsOnScreen = score => withFakeDom(async () => {
+  const { renderScore } = await import('../src/render/score.js');
+  const container = new FakeElement('div');
+  renderScore(score, container, PAGE.maxWidth);
+  return container.children[0].children;
+});
+const onScreen = async score => (await svgsOnScreen(score)).map(svg => svg.children.flatMap(screenItems));
+
 test('the PDF draws what the screen draws, element for element, in the same order', async () => {
-  for (const overrides of VARIED) {
+  for (const study of STUDIES) {
     for (const pageSize of PAGE_SIZE_NAMES) {
-      const score = scoreWith(overrides, 4);
+      const score = study(4);
       const { systems, scale, layout } = exportOf(score, { pageSize });
       const screen = await onScreen(score);
       assert.equal(systems.length, screen.length);
+      // The signature is among what is compared: one sign for each of the
+      // key's, at the head of every system.
+      const signature = Math.abs(signatureOf(keyById(score.key)));
+      for (const drawn of screen) {
+        const firstHead = drawn.findIndex(item => item.name === 'noteheadBlack');
+        assert.equal(glyphs(drawn.slice(0, firstHead), 'sharp', 'flat').length, signature);
+      }
 
       systems.forEach((system, s) => {
         const drawn = [...system.staff, ...system.items];
@@ -1005,6 +1159,78 @@ test('the PDF draws what the screen draws, element for element, in the same orde
       });
     }
   }
+});
+
+// ---- The note map -----------------------------------------------------------
+// Only the screen draws it. It is tested here because this file has the
+// stand-in for the page that src/render needs.
+
+const classed = (nodes, name) => nodes.filter(node => node.attrs.class?.split(' ').includes(name));
+
+// What the note map shows for these settings: for each position its heading,
+// and the sign drawn beside each of its notes, in order.
+const noteMapOf = settings => withFakeDom(async () => {
+  const { renderNoteMap } = await import('../src/render/note-map.js');
+  const container = new FakeElement('div');
+  renderNoteMap(settings, container, PAGE.maxWidth);
+  return container.children.map(section => {
+    const [heading, svg] = section.children;
+    const signs = classed(svg.children, 'note').map(group => {
+      const drawn = classed(group.children, 'accidental');
+      assert.ok(drawn.length <= 1);
+      return drawn.length ? GLYPH_OF_CHAR.get(drawn[0].textContent) : null;
+    });
+    return {
+      title: heading.textContent,
+      range: heading.children[0].textContent,
+      signs,
+      fingers: classed(svg.children, 'map-finger').length,
+      // Glyphs outside the notes: the clef of each row, and nothing else.
+      others: classed(svg.children, 'glyph').map(node => GLYPH_OF_CHAR.get(node.textContent))
+    };
+  });
+});
+
+test('the note map shows the notes a study can contain, each with its own sharp or flat', async () => {
+  const own = pitch => ({ 1: 'sharp', [-1]: 'flat' }[pitch.alter] ?? null);
+  const cases = [
+    ...['none', 'sharps', 'flats'].map(accidentals => settingsWith({ positions: [1, 5, 9], accidentals })),
+    settingsWith({ positions: [5], strings: [1, 2], accidentals: 'flats' }),
+    ...['D', 'E', 'Bb', 'Gm', 'C#m', 'C'].flatMap(key => ['none', 'sharps', 'flats'].map(accidentals =>
+      settingsWith({ positions: [2, 7], melody: 'musical', key, accidentals })))
+  ];
+  for (const settings of cases) {
+    const sections = await noteMapOf(settings);
+    assert.equal(sections.length, settings.positions.length);
+    sections.forEach((section, i) => {
+      const position = settings.positions[i];
+      const pool = notePool(position, settings);
+      assert.equal(section.title, `Position ${ROMAN[position]}`);
+      assert.equal(section.range, `${pitchName(pool[0])}–${pitchName(pool.at(-1))} as written · ${pool.length} notes`);
+      assert.deepEqual(section.signs, pool.map(own));
+      assert.equal(section.fingers, pool.length);
+      // A table of notes, not music in a key: a clef on each row, no signature.
+      assert.ok(section.others.length >= 1 && section.others.every(name => name === 'gClef'));
+    });
+  }
+
+  // Said outright for position V, which has 24 notes, 8 of them black keys.
+  const signsAt = async overrides => (await noteMapOf(settingsWith({ positions: [5], ...overrides })))[0].signs;
+  const tally = signs => ['sharp', 'flat', 'natural', null].map(sign => signs.filter(s => s === sign).length);
+  // Random mode: natural notes, or all of them with sharps, or with flats.
+  assert.deepEqual(tally(await signsAt({ accidentals: 'none' })), [0, 0, 0, 16]);
+  assert.deepEqual(tally(await signsAt({ accidentals: 'sharps' })), [8, 0, 0, 16]);
+  assert.deepEqual(tally(await signsAt({ accidentals: 'flats' })), [0, 8, 0, 16]);
+  // Musical mode: the notes of the key, B flat and E flat with their flats...
+  const inBflat = { melody: 'musical', key: 'Bb' };
+  assert.deepEqual(tally(await signsAt({ ...inBflat, accidentals: 'none' })), [0, 5, 0, 12]);
+  // ... and with accidentals on, the others too, spelled as that key spells
+  // them, whichever of the two "on" values is set. A note without a sharp or
+  // flat has no sign, whether or not it belongs to the key.
+  assert.deepEqual(tally(await signsAt({ ...inBflat, accidentals: 'sharps' })), [0, 8, 0, 16]);
+  assert.deepEqual(tally(await signsAt({ ...inBflat, accidentals: 'flats' })), [0, 8, 0, 16]);
+  assert.deepEqual(tally(await signsAt({ melody: 'musical', key: 'E', accidentals: 'flats' })), [8, 0, 0, 16]);
+  assert.deepEqual(tally(await signsAt({ melody: 'musical', key: 'E', accidentals: 'none' })), [5, 0, 0, 7]);
 });
 
 // ---- Words ------------------------------------------------------------------

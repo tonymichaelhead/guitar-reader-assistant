@@ -31,12 +31,12 @@ Dependencies point one way: `music/` imports nothing from the other directories,
 
 ### `src/music/`
 
-- `pitch.js` — the pitch model, spelling with sharps or flats, staff steps.
-- `fretboard.js` — which pitches each position offers on which strings, with fingerings (`poolFor`).
+- `pitch.js` — the pitch model, spelling (with sharps, with flats, on a given letter), what a key signature does to a letter, staff steps.
+- `fretboard.js` — which pitches each position offers on which strings, with fingerings: `poolFor` for Random mode, `keyPool` spelled for a key, and `notePool`, the notes a study with given settings can contain.
 - `rng.js` — the seeded generator (`mulberry32`) and `pick`, `weightedPick`, `shuffle`.
 - `positions.js` — which position each measure is in.
 - `rhythm.js` — beat cells and measure rhythms for both melody modes.
-- `theory.js` — tonal centres, scale-degree weights and chord progressions for Musical mode.
+- `theory.js` — the keys on offer, how a key spells a note inside and outside its scale, and the scale-degree weights and chord progressions of Musical mode.
 - `random-melody.js`, `musical-melody.js` — the two melody generators.
 - `generate.js` — the entry point that calls the others in order.
 - `score-codec.js` — packs a Score into a small JSON-safe form and rebuilds it (`encodeScore`, `decodeScore`).
@@ -44,8 +44,8 @@ Dependencies point one way: `music/` imports nothing from the other directories,
 ### `src/render/`
 
 - `glyphs.js` — SMuFL code points and Bravura metrics.
-- `layout.js` — accidentals in force, spacing, system breaks, stems and beams. Pure.
-- `draw.js` — primitives that draw one thing each: staff, clef, time signature, note, beam, barline.
+- `layout.js` — the key signature, accidentals in force against it, spacing, system breaks, stems and beams. Pure.
+- `draw.js` — primitives that draw one thing each: staff, clef, key signature, time signature, note, beam, barline.
 - `score.js`, `note-map.js` — the two views.
 - `tooltip.js` — the fingering tooltip.
 - `svg.js` — `el()`, the one helper that creates SVG nodes.
@@ -72,7 +72,7 @@ Dependencies point one way: `music/` imports nothing from the other directories,
 
 ## Data
 
-**Settings** (`src/state/settings.js`): `positions`, `rotatePositions`, `strings`, `noteValues`, `accidentals`, `melody`, plus two that the interface does not expose yet, `measures` and `maxLeapSteps`. `sanitize` turns any stored value into valid settings, and no list is ever empty.
+**Settings** (`src/state/settings.js`): `positions`, `rotatePositions`, `strings`, `noteValues`, `melody`, `key` (a key id; only Musical mode uses it), `accidentals` (`'none'`, `'sharps'` or `'flats'`; Random mode uses all three, Musical mode only asks whether it is `'none'`), plus two that the interface does not expose yet, `measures` and `maxLeapSteps`. Until keys were added `accidentals` was stored as true or false; `sanitize` still reads that, with true as `'sharps'`. `sanitize` turns any stored value into valid settings, and no list is ever empty.
 
 **Score** (`src/music/generate.js`):
 
@@ -80,7 +80,10 @@ Dependencies point one way: `music/` imports nothing from the other directories,
 {
   seed,                    // the study's number
   settings,                // a copy of the settings it was generated with
-  tonality,                // "C major" and so on in Musical mode, null in Random mode
+  key,                     // a key id from theory.js ("D", "F#m") in Musical mode; null in
+                           // Random mode and in a study saved before keys existed
+  tonality,                // the key's label ("D major"), null in Random mode; a study saved
+                           // before keys existed keeps the label it had ("G Mixolydian")
   measures: [{
     number,                // from 1
     position,              // 1-12
@@ -89,19 +92,26 @@ Dependencies point one way: `music/` imports nothing from the other directories,
 }
 ```
 
-A **pitch** is `{ letter, octave, alter, value, fingerings }`. `value` is `octave * 12 + pitch class` of the written pitch. `fingerings` is a list of `{ string, fret, finger }`, already narrowed to the enabled strings.
+A **pitch** is `{ letter, octave, alter, value, fingerings }`. `value` is what sounds, in semitones, with C4 = 48; `letter`, `octave` and `alter` (-1, 0 or +1) are how it is written. For most notes `value` is `octave * 12 + pitch class`, but the octave belongs to the letter: B♯3 has the value of C4. A pitch's `alter` is its spelling, not whether a sign is drawn: that is decided against the key signature in `layout.js`. `fingerings` is a list of `{ string, fret, finger }`, already narrowed to the enabled strings.
 
 **Saved study** (`src/state/library.js`, localStorage key `guitar-reading-assistant.library.v1`): a JSON array of `{ id, savedAt, data }`, where `data` is the encoded Score:
 
 ```js
-{ v: 1, seed, tonality, settings, measures: [{ p: position, n: [[value, alter, dur], ...] }] }
+{ v: 2, seed, tonality, key, settings, measures: [{ p: position, n: [[value, alter, dur], ...] }] }
 ```
 
-The notes are stored, not just the seed, so a saved study still opens unchanged after the generators have been retuned. What can be worked out again is left out: a note's start, a measure's number, and each pitch's letter, octave and fingerings, which `decodeScore` takes from the fretboard. That makes `fretboard.js` part of the stored format: every stored note must still be in the pool of its measure's position when the study is read, so taking a note out of a position would make the saved studies that use it stop appearing. `decodeScore` returns `null` for anything it cannot read and never throws; entries it cannot read are left in storage untouched, so a newer version's studies survive an older one. A study in quarter notes takes about 1 KB.
+The notes are stored, not just the seed, so a saved study still opens unchanged after the generators have been retuned. What can be worked out again is left out: a note's start, a measure's number, each pitch's letter and octave, which follow from `value` and `alter` (53 with a sharp is E sharp), and its fingerings, which `decodeScore` takes from the fretboard. That makes `fretboard.js` part of the stored format: every stored note must still be in the pool of its measure's position when the study is read, so taking a note out of a position would make the saved studies that use it stop appearing. The key ids in `theory.js` are part of it for the same reason: a study is stored under the id of its key, so renaming or withdrawing a key would hide the studies saved in it.
+
+The format has versions, and `v` says which. Only the newest is written. Every older one stays readable, because people's saved studies are in it, and its reader is never changed: an old study has to open exactly as it did. A change of format is a new version with a reader of its own.
+
+- **Version 1** (the format of the first release with a library) is from before a study could be in a key. It has no `key`, and a note in it is a white key written plain or a black key written as a sharp or a flat, nothing else. It decodes to a Score whose `key` is `null`, with the `tonality` it was saved with, which may be a mode no longer on offer ("G Mixolydian"). Its stored settings have no `key` either and hold `accidentals` as `true` or `false`; `sanitize` brings them up to date when the library loads the study, but the study's key is the Score's `key`, never `settings.key`.
+- **Version 2** adds `key`: a key id, or `null` for a study without one. A note is whatever letter its `alter` lands on, so a key can write E sharp, B sharp, C flat or F flat.
+
+`decodeScore` returns `null` for anything it cannot read and never throws: a version or a key id it does not know, a note that is not in its position, a spelling its version does not have. Entries it cannot read are left in storage untouched, so a newer version's studies survive an older one. A study stored in an old version is not rewritten either: it stays as it is until it is deleted, and only a study saved now is written as version 2. A study in quarter notes takes about 1 KB.
 
 Every save and delete re-reads the stored list first, so two tabs of the app never overwrite each other's studies, and `main.js` listens for the `storage` event so that a change made in another tab shows up in this one.
 
-**Layout** (`layoutScore`): systems, each with its staff position, its measures, and for every note its `x`, `y`, ledger lines, accidental sign and stem, plus the beams of each measure.
+**Layout** (`layoutScore`): systems, each with its staff position, its key signature (a list of `{ sign, x, y }`, empty without a key), its measures, and for every note its `x`, `y`, ledger lines, accidental sign and stem, plus the beams of each measure.
 
 ## Rules that hold everywhere
 

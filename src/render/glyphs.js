@@ -27,6 +27,11 @@ export const GLYPH = {
 // (redist/Bravura.json: glyphsWithAnchors, glyphBBoxes, engravingDefaults).
 export const METRICS = {
   noteheadWidth: 1.18,
+  // Widths of the glyphs a key signature is spaced by. Each glyph fills its
+  // advance, so this is both: 671, 249 and 226 font units, 250 to the space.
+  gClefWidth: 2.684,
+  sharpWidth: 0.996,
+  flatWidth: 0.904,
   stemAttachY: 0.168,      // where a stem meets the notehead, above/below its centre
   staffLine: 0.13,
   stem: 0.12,

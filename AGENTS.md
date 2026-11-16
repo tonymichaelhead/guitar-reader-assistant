@@ -34,7 +34,7 @@ There is no lint, type-check or build command.
 Units, which are easy to get wrong:
 
 - Durations are counted in sixteenths: quarter 4, eighth 2, sixteenth 1.
-- A pitch `value` is `octave * 12 + pitch class` of the *written* pitch, so C4 is 48. Guitar music sounds an octave lower than written.
+- A pitch `value` counts semitones of the *written* pitch, so C4 is 48: `octave * 12 + pitch class` for all but the rare spellings that cross an octave (B♯3 has the value of C4). Guitar music sounds an octave lower than written.
 - Layout lengths are SVG units; `SPACE` (12) is one staff space. Write sizes as multiples of `SPACE`, not as bare numbers.
 
 ## Conventions
@@ -66,7 +66,7 @@ export function randomMelody({ pools, rhythm, maxLeapSteps }, rng) {
 **Ask first**
 
 - Adding a dependency, a build step or a new top-level directory.
-- Changing the Score shape, or a localStorage key or stored format (`settings.js`, `library.js`, `score-codec.js`). People's saved studies must keep opening: a format change needs a new codec version that still reads the old one. The same goes for removing a note from a position in `fretboard.js`: a stored study is checked against those pools when it is read.
+- Changing the Score shape, or a localStorage key or stored format (`settings.js`, `library.js`, `score-codec.js`). People's saved studies must keep opening: a format change needs a new codec version that still reads the old one. The same goes for removing a note from a position in `fretboard.js` (a stored study is checked against those pools when it is read) and for renaming or removing a key id in `theory.js` (a study is stored under the id of its key).
 - Changing what Random mode produces. It is deliberately the original algorithm.
 - Replacing or adding fonts.
 
@@ -92,8 +92,11 @@ Read the one that matches the work; none is needed for a small fix.
 ## Gotchas
 
 - Position I covers five frets (open strings plus frets 1–4). Every other position covers four.
-- A pitch object carries its fingerings. To change a spelling use `respell`, which keeps them; `spell` makes a bare pitch.
-- Musical mode is always given the full chromatic pool and decides for itself whether to use it. Random mode is given the pool already filtered by the accidentals setting.
+- A pitch object carries its fingerings. To change a spelling use `respell`, which keeps them. `spell` and, in a key, `spellToward` return a bare spelling: merge it over the pool note (`{ ...pitch, ...spelling }`).
+- Musical mode is always given the full chromatic pool, spelled for its key (`keyPool`), and decides for itself whether to use the notes outside the key. Random mode is given the pool already filtered and spelled by the accidentals setting (`poolFor`).
+- "Accidental" means two things, so say which. `pitch.alter` is how a note is spelled (F♯ has alter 1 in any key). Whether a sign is drawn beside it is decided in `layout.js` against the key signature: in D major an F♯ gets no sign and an F♮ gets a natural. And a note is chromatic when it is outside the key (`inKey`), not when its alter is non-zero.
+- `settings.accidentals` is `'none'`, `'sharps'` or `'flats'`. Random mode uses all three. Musical mode only asks whether it is `'none'`: the key does the spelling.
+- The octave of a pitch belongs to its letter: B♯3 has the value of C4. Never derive the octave from `value` alone; use the spelling helpers in `pitch.js`.
 - Only files matching `test/*.test.js` are tests. `test/helpers.js` is shared code.
 - Settings persist in localStorage under `guitar-reading-assistant.settings.v1`. Remove that key to see the defaults again. Saved studies are under `guitar-reading-assistant.library.v1`.
 - There are two renderers. A change to how something is drawn in `src/render/draw.js` or `score.js` almost always needs the same change in `src/export/score-pdf.js`, and the other way round.

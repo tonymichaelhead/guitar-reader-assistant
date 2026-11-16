@@ -1,7 +1,8 @@
 // Engraving geometry. Pure functions: a Score goes in, coordinates come out,
 // and nothing here touches the DOM (so it can be unit-tested in Node).
 // Rules and sources are written up in docs/engraving.md.
-import { staffStep } from '../music/pitch.js';
+import { FLAT_ORDER, SHARP_ORDER, signatureAlter, staffStep } from '../music/pitch.js';
+import { keyById, signatureOf } from '../music/theory.js';
 import { METRICS, SPACE as S } from './glyphs.js';
 
 export const PAGE = {
@@ -25,6 +26,18 @@ const ACCIDENTAL_TIGHT = 0.85 * S; // ... or after an eighth or sixteenth
 const MIN_STRETCH = 0.8;           // how far note spacing may be squeezed to fit a system
 const SHORT_SYSTEM_STRETCH = 1.25; // a short last system is not stretched to full width
 
+const CLEF_INSET = 0.45 * S;       // left end of the staff to the clef
+// Key signature. The octave each sign is written in on a treble staff, in the
+// order a signature adds them: sharps F5 C5 G5 D5 A4 E5 B4, flats B4 E5 A4 D5
+// G4 C5 F4.
+const KEY_SIGN_OCTAVES = { sharp: [5, 5, 5, 5, 4, 5, 4], flat: [4, 5, 4, 5, 4, 5, 4] };
+const KEY_SIGN_WIDTH = { sharp: METRICS.sharpWidth * S, flat: METRICS.flatWidth * S };
+const KEY_AFTER_CLEF = 1.0 * S;    // right edge of the clef to the first sign
+const KEY_SIGN_GAP = 0;            // between signs: they stand edge to edge
+const KEY_TRAIL = 1.0 * S;         // last sign to the time signature's room, or to the first measure
+// Left end of the staff to the first sign.
+const KEY_START = CLEF_INSET + METRICS.gClefWidth * S + KEY_AFTER_CLEF;
+
 const HEAD = METRICS.noteheadWidth * S;
 const STEM = METRICS.stem * S;
 const STEM_LENGTH = 3.5 * S;
@@ -40,17 +53,49 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 export const viewWidthFor = containerPx =>
   clamp(Math.round(containerPx * 1.1), PAGE.minWidth, PAGE.maxWidth);
 
-// Which accidental sign each note of a measure needs. A sign stays in force
-// for that line or space until the barline, so repeats are not re-marked and a
-// return to the natural note needs a natural sign.
-export function resolveAccidentals(notes) {
+// The sign that writes an alteration.
+export const accidentalSign = alter => (alter === 1 ? 'sharp' : alter === -1 ? 'flat' : 'natural');
+
+// Which accidental sign each note of a measure needs. When the measure begins
+// the key signature (a count: sharps when positive, flats when negative) is in
+// force for every octave of its letters. A sign beside a note then holds for
+// that line or space, in that octave only, until the barline. A note is marked
+// exactly when its alteration differs from what is in force, with the sign of
+// its own alteration: repeats are not re-marked, leaving the signature takes a
+// natural, and coming back to it in the same measure takes the sharp or flat
+// again. There are no courtesy accidentals.
+export function resolveAccidentals(notes, signature = 0) {
   const inForce = new Map();
   return notes.map(({ pitch }) => {
-    const key = pitch.letter + pitch.octave;
-    if (pitch.alter === (inForce.get(key) || 0)) return null;
-    inForce.set(key, pitch.alter);
-    return pitch.alter === 1 ? 'sharp' : pitch.alter === -1 ? 'flat' : 'natural';
+    const place = pitch.letter + pitch.octave;
+    const current = inForce.has(place) ? inForce.get(place) : signatureAlter(signature, pitch.letter);
+    if (pitch.alter === current) return null;
+    inForce.set(place, pitch.alter);
+    return accidentalSign(pitch.alter);
   });
+}
+
+// The signs of a key signature on a staff whose bottom line is at `bottom`,
+// the first with its left edge at `x`. Each is { sign, x, y }: its left edge
+// and its line or space, as for an accidental beside a note.
+export function placeKeySignature(signature, x, bottom) {
+  const sign = signature > 0 ? 'sharp' : 'flat';
+  const letters = signature > 0 ? SHARP_ORDER : FLAT_ORDER;
+  return letters.slice(0, Math.abs(signature)).map((letter, i) => ({
+    sign,
+    x: x + i * (KEY_SIGN_WIDTH[sign] + KEY_SIGN_GAP),
+    y: bottom - staffStep({ letter, octave: KEY_SIGN_OCTAVES[sign][i] }) * (S / 2)
+  }));
+}
+
+// The room a key signature takes out of a system, between the clef's room and
+// whatever follows: the time signature or the first measure. Without a
+// signature it takes none, and the system is laid out as it was before keys.
+function keySignatureWidth(signature) {
+  const count = Math.abs(signature);
+  if (count === 0) return 0;
+  const signs = count * KEY_SIGN_WIDTH[signature > 0 ? 'sharp' : 'flat'] + (count - 1) * KEY_SIGN_GAP;
+  return KEY_START + signs + KEY_TRAIL - PAGE.clefWidth;
 }
 
 // A notehead on a staff whose bottom line is at `bottom`: its height and the
@@ -151,9 +196,10 @@ function beamGroup(notes, bottom) {
 }
 
 // Natural (unstretched) spacing of one measure: `fixed` space that never
-// stretches, `flex` space that does, and each note's share of both.
-function measureSpacing(measure, isFinal) {
-  const accidentals = resolveAccidentals(measure.notes);
+// stretches, `flex` space that does, and each note's share of both. The key
+// signature decides which notes carry a sign, and a sign takes room.
+function measureSpacing(measure, isFinal, signature) {
+  const accidentals = resolveAccidentals(measure.notes, signature);
   let fixed = BAR_LEAD;
   let flex = 0;
   const marks = measure.notes.map((note, i) => {
@@ -169,19 +215,21 @@ function measureSpacing(measure, isFinal) {
   return { measure, marks, fixed, flex };
 }
 
-const availableWidth = (viewWidth, systemIndex) =>
-  viewWidth - PAGE.left - PAGE.right - PAGE.clefWidth - (systemIndex === 0 ? PAGE.timeWidth : 0);
+// What is left for the measures of a system after the clef, the key signature
+// and, on the first system, the time signature.
+const availableWidth = (viewWidth, systemIndex, keyWidth) =>
+  viewWidth - PAGE.left - PAGE.right - PAGE.clefWidth - keyWidth - (systemIndex === 0 ? PAGE.timeWidth : 0);
 
 // The same number of measures on every system - four, two or one - so that
 // systems line up with phrases. The largest count that fits everywhere wins.
-function measuresPerSystem(spacings, viewWidth) {
+function measuresPerSystem(spacings, viewWidth, keyWidth) {
   for (const count of [4, 2]) {
     let fits = true;
     for (let i = 0, s = 0; i < spacings.length; i += count, s++) {
       const chunk = spacings.slice(i, i + count);
       const fixed = chunk.reduce((sum, b) => sum + b.fixed, 0);
       const flex = chunk.reduce((sum, b) => sum + b.flex, 0);
-      if (fixed + MIN_STRETCH * flex > availableWidth(viewWidth, s)) fits = false;
+      if (fixed + MIN_STRETCH * flex > availableWidth(viewWidth, s, keyWidth)) fits = false;
     }
     if (fits) return count;
   }
@@ -190,15 +238,19 @@ function measuresPerSystem(spacings, viewWidth) {
 
 export function layoutScore(score, requestedWidth) {
   const total = score.measures.length;
-  const spacings = score.measures.map((m, i) => measureSpacing(m, i === total - 1));
+  // A study without a key (Random mode, or saved before keys existed) has no
+  // signature and is laid out as it always was.
+  const signature = signatureOf(keyById(score.key));
+  const keyWidth = keySignatureWidth(signature);
+  const spacings = score.measures.map((m, i) => measureSpacing(m, i === total - 1, signature));
   // If even one measure per system would be squeezed past the limit (dense
   // sixteenths on a phone), widen the drawing instead: the notation renders
   // smaller, but notes never collide.
   const widest = Math.max(...spacings.map(b => b.fixed + MIN_STRETCH * b.flex));
   const viewWidth = Math.max(
     requestedWidth,
-    Math.ceil(widest + PAGE.left + PAGE.right + PAGE.clefWidth + PAGE.timeWidth));
-  const perSystem = measuresPerSystem(spacings, viewWidth);
+    Math.ceil(widest + PAGE.left + PAGE.right + PAGE.clefWidth + keyWidth + PAGE.timeWidth));
+  const perSystem = measuresPerSystem(spacings, viewWidth, keyWidth);
   const systems = [];
   let previousPosition = null;
 
@@ -206,10 +258,10 @@ export function layoutScore(score, requestedWidth) {
     const chunk = spacings.slice(i, i + perSystem);
     const top = PAGE.systemTop + s * PAGE.systemGap;
     const bottom = top + 4 * S;
-    const startX = PAGE.left + PAGE.clefWidth + (s === 0 ? PAGE.timeWidth : 0);
+    const startX = PAGE.left + PAGE.clefWidth + keyWidth + (s === 0 ? PAGE.timeWidth : 0);
     const fixed = chunk.reduce((sum, b) => sum + b.fixed, 0);
     const flex = chunk.reduce((sum, b) => sum + b.flex, 0);
-    let stretch = (availableWidth(viewWidth, s) - fixed) / flex;
+    let stretch = (availableWidth(viewWidth, s, keyWidth) - fixed) / flex;
     if (chunk.length < perSystem) stretch = Math.min(stretch, SHORT_SYSTEM_STRETCH);
 
     let cursor = startX;
@@ -247,8 +299,10 @@ export function layoutScore(score, requestedWidth) {
       bottom,
       staffStart: PAGE.left,
       staffEnd: cursor,
-      clefX: PAGE.left + 0.45 * S,
-      timeX: s === 0 ? PAGE.left + PAGE.clefWidth + 0.9 * S : null,
+      clefX: PAGE.left + CLEF_INSET,
+      // Every system repeats the signature; only the first has the time signature.
+      keySignature: placeKeySignature(signature, PAGE.left + KEY_START, bottom),
+      timeX: s === 0 ? PAGE.left + PAGE.clefWidth + keyWidth + 0.9 * S : null,
       measureNumber: s === 0 ? null : chunk[0].measure.number,
       markY: Math.min(top - 2 * S, highest - 0.9 * S),
       bars

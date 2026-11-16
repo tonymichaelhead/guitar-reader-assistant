@@ -1,14 +1,18 @@
 // Musical mode: still random, but shaped by melody-writing conventions.
 // See docs/music-generation.md for the reasoning and sources behind each rule.
 //
-// Layers: tonal centre -> phrases with a chord per measure and a cadence each
+// Layers: the key -> phrases with a chord per measure and a cadence each
 // -> a shared rhythm -> pitches from a weighted random walk -> several
 // candidate walks per phrase, of which one of the best-shaped is kept.
-import { diatonicIndex, respell } from './pitch.js';
+//
+// Two words used throughout. A "scale" note belongs to the key; a "chromatic"
+// note does not. Neither is about the sign a note carries: in D major F sharp
+// is a scale note and F natural the chromatic one. Ask `inKey`, never `alter`.
+import { diatonicIndex } from './pitch.js';
 import { pick, weightedPick } from './rng.js';
 import { barSlots, musicalRhythm } from './rhythm.js';
 import {
-  DEGREE_WEIGHTS, PHRASE_LENGTH, PROGRESSIONS, TONALITIES, chordDegrees, degreeOf
+  DEGREE_WEIGHTS, PHRASE_LENGTH, PROGRESSIONS, chordDegrees, degreeOf, inKey, spellToward
 } from './theory.js';
 
 // Starting values, tuned by ear and by the statistics checked in the tests.
@@ -24,34 +28,53 @@ export const TUNING = {
   leapReversal: 3,           // after a fourth or more, step back the other way
   leapContinuation: 0.4,
   chromaticRate: 0.07,       // weight of a chromatic note relative to a stable step
+  // Multipliers on chromaticRate, by what the chromatic note does.
+  chromaticFalling: 0.5,     // one that resolves downward is rarer
+  leadingNote: 2,            // up to the tonic (the raised seventh of a minor key)
+  raisedFourth: 1.5,         // up to the fifth degree
+  loweredSeventh: 1.4,       // down to the sixth degree, in major
+  chromaticCadence: 3,       // straight into the note a phrase ends on
+  melodicMinor: 1.5,         // the rising figure 5, raised 6, raised 7, 1
   candidatesPerPhrase: 24
 };
 
 const gaussian = (x, sigma) => Math.exp(-(x * x) / (2 * sigma * sigma));
 
-export function musicalMelody({ pools, positions, settings }, rng) {
+// Melodic distance in staff steps, signed. A chromatic semitone written on one
+// letter (F natural to F sharp in D major) is still a step in its direction.
+const stepsBetween = (from, to) =>
+  diatonicIndex(to) - diatonicIndex(from) || Math.sign(to.value - from.value);
+
+// `pools` holds, for each measure, every note of its position spelled for
+// `key` (keyPool in fretboard.js). Returns each measure's notes.
+export function musicalMelody({ pools, positions, settings, key }, rng) {
+  // 'sharps' and 'flats' both mean on (the key does the spelling), and so does
+  // true, which is how the setting was stored before it had three values.
+  const chromatic = settings.accidentals === 'sharps' || settings.accidentals === 'flats' ||
+    settings.accidentals === true;
+  // Any four neighbouring frets hold at least two notes of a scale, so `scale`
+  // is never empty, however few strings are enabled.
   const bars = pools.map(pool => {
-    const naturals = pool.filter(p => p.alter === 0);
-    const chromatics = settings.accidentals ? pool.filter(p => p.alter !== 0) : [];
+    const scale = pool.filter(p => inKey(key, p));
+    const outside = chromatic ? pool.filter(p => !inKey(key, p)) : [];
     return {
-      naturals,
-      chromatics,
-      natural: new Map(naturals.map(p => [p.value, p])),
-      chromatic: new Map(chromatics.map(p => [p.value, p]))
+      scale,
+      outside,
+      scaleAt: new Map(scale.map(p => [p.value, p])),
+      outsideAt: new Map(outside.map(p => [p.value, p]))
     };
   });
 
-  const tonality = chooseTonality(bars, rng);
   const rhythm = musicalRhythm(settings.noteValues, bars.length, PHRASE_LENGTH, rng);
-  const phrases = planPhrases(bars.length, tonality, rhythm, rng);
+  const phrases = planPhrases(bars.length, key, rhythm, rng);
 
-  const peak = Math.max(...DEGREE_WEIGHTS[tonality.mode]);
+  const peak = Math.max(...DEGREE_WEIGHTS[key.mode]);
   const ctx = {
     bars,
     positions,
-    tonality,
-    accidentals: settings.accidentals,
-    degreeWeights: DEGREE_WEIGHTS[tonality.mode].map(w => w / peak),
+    key,
+    chromatic,
+    degreeWeights: DEGREE_WEIGHTS[key.mode].map(w => w / peak),
     centres: planRegisters(bars, phrases, rng)
   };
 
@@ -73,25 +96,17 @@ export function musicalMelody({ pools, positions, settings }, rng) {
     }
   });
 
-  return { bars: out, tonality: tonality.label };
-}
-
-// Prefer a centre whose tonic the final measure can actually play.
-function chooseTonality(bars, rng) {
-  const finalLetters = new Set(bars[bars.length - 1].naturals.map(p => p.letter));
-  const reachable = TONALITIES.filter(t => finalLetters.has(t.tonic));
-  const options = reachable.length ? reachable : TONALITIES;
-  return weightedPick(rng, options, options.map(t => t.weight));
+  return out;
 }
 
 // Four-measure phrases alternating open and closed cadences; the last phrase
 // always closes. A short final phrase uses the tail of its chord template.
-function planPhrases(barCount, tonality, rhythm, rng) {
+function planPhrases(barCount, key, rhythm, rng) {
   const phrases = [];
   for (let firstBar = 0; firstBar < barCount; firstBar += PHRASE_LENGTH) {
     const length = Math.min(PHRASE_LENGTH, barCount - firstBar);
     const closed = firstBar + length >= barCount || phrases.length % 2 === 1;
-    const template = pick(rng, PROGRESSIONS[tonality.mode][closed ? 'closed' : 'open']);
+    const template = pick(rng, PROGRESSIONS[key.mode][closed ? 'closed' : 'open']);
     const slots = [];
     for (let b = 0; b < length; b++) {
       for (const slot of barSlots(rhythm[firstBar + b])) slots.push({ bar: firstBar + b, ...slot });
@@ -109,8 +124,8 @@ function planPhrases(barCount, tonality, rhythm, rng) {
 function planRegisters(bars, phrases, rng) {
   const MARGIN = 5;      // semitones kept clear at either end of the range
   const MAX_DRIFT = 7;   // semitones between neighbouring phrase centres
-  const low = b => b.naturals[0].value;
-  const high = b => b.naturals[b.naturals.length - 1].value;
+  const low = b => b.scale[0].value;
+  const high = b => b.scale[b.scale.length - 1].value;
   const centres = new Array(bars.length);
   const phraseCentres = [];
   phrases.forEach((phrase, index) => {
@@ -147,7 +162,7 @@ function walkPhrase(ctx, phrase, start, echo, rng) {
   const firstBarSlots = slots.filter(s => s.bar === phrase.firstBar).length;
   // Reopen like the first phrase only if this measure can play it note for note.
   const canEcho = Boolean(echo) && echo.length === firstBarSlots &&
-    echo.every(v => firstBar.natural.has(v));
+    echo.every(v => firstBar.scaleAt.has(v));
 
   const notes = [];
   let { prev, move, leaps, prevDur } = start;
@@ -165,7 +180,7 @@ function walkPhrase(ctx, phrase, start, echo, rng) {
     } else if (remaining === 0 && target) {
       pitch = target;
     } else if (canEcho && slot.bar === phrase.firstBar) {
-      pitch = firstBar.natural.get(echo[i]);
+      pitch = firstBar.scaleAt.get(echo[i]);
     } else {
       const choice = choose(ctx, phrase, i, { prev, move, leaps, prevDur, target }, rng);
       pitch = choice.pitch;
@@ -173,7 +188,7 @@ function walkPhrase(ctx, phrase, start, echo, rng) {
     }
 
     if (prev) {
-      move = diatonicIndex(pitch) - diatonicIndex(prev);
+      move = stepsBetween(prev, pitch);
       leaps = Math.abs(move) >= 2 ? leaps + 1 : 0;
     }
     notes.push({ bar: slot.bar, start: slot.start, dur: slot.dur, pitch });
@@ -190,14 +205,19 @@ function walkPhrase(ctx, phrase, start, echo, rng) {
 
 // The note a phrase ends on: the tonic for a closed phrase, otherwise a
 // non-tonic note of the final chord. Whichever such note is nearest is likeliest.
+// The key is the reader's choice, so the measure may be unable to play that
+// note (a single string holds four or five semitones). Then any note of the
+// final chord will do, which for a closed phrase is the third or fifth of the
+// tonic chord; and with none of those either, null: the walk ends where its
+// own weights take it, on a note of the scale.
 function chooseTarget(ctx, phrase, prev, rng) {
   const lastSlot = phrase.slots[phrase.slots.length - 1];
-  const { naturals } = ctx.bars[lastSlot.bar];
+  const { scale } = ctx.bars[lastSlot.bar];
   const finalChord = chordDegrees(phrase.chords[phrase.chords.length - 1]);
   const wanted = phrase.closed ? [0] : finalChord.filter(d => d !== 0);
-  let options = naturals.filter(p => wanted.includes(degreeOf(p, ctx.tonality)));
+  let options = scale.filter(p => wanted.includes(degreeOf(p, ctx.key)));
   if (!options.length) {
-    options = naturals.filter(p => finalChord.includes(degreeOf(p, ctx.tonality)));
+    options = scale.filter(p => finalChord.includes(degreeOf(p, ctx.key)));
   }
   if (!options.length) return null;
   const anchor = prev ? prev.value : ctx.centres[lastSlot.bar];
@@ -205,11 +225,11 @@ function chooseTarget(ctx, phrase, prev, rng) {
 }
 
 function choose(ctx, phrase, i, state, rng) {
-  const { naturals } = ctx.bars[phrase.slots[i].bar];
+  const { scale } = ctx.bars[phrase.slots[i].bar];
   const options = [];
   const weights = [];
-  for (const p of naturals) {
-    const w = naturalWeight(ctx, phrase, i, state, p);
+  for (const p of scale) {
+    const w = scaleWeight(ctx, phrase, i, state, p);
     if (w > 0) {
       options.push({ pitch: p });
       weights.push(w);
@@ -221,7 +241,7 @@ function choose(ctx, phrase, i, state, rng) {
   }
   if (!options.length) {
     // The rules left nothing (a very small pool): take a nearby note instead.
-    for (const p of naturals) {
+    for (const p of scale) {
       options.push({ pitch: p });
       weights.push(Math.exp(-Math.abs(p.value - state.prev.value) / 3) + 1e-6);
     }
@@ -234,12 +254,14 @@ function choose(ctx, phrase, i, state, rng) {
 const afterShift = (ctx, slot) =>
   slot.start === 0 && slot.bar > 0 && ctx.positions[slot.bar] !== ctx.positions[slot.bar - 1];
 
-function naturalWeight(ctx, phrase, i, state, p) {
+// The weight of a scale note at slot i. `state.prev` is always a scale note
+// here: a chromatic note commits the notes after it until it has resolved.
+function scaleWeight(ctx, phrase, i, state, p) {
   const { slots } = phrase;
   const slot = slots[i];
   const remaining = slots.length - 1 - i;
   const { prev, move, leaps, prevDur, target } = state;
-  const degree = degreeOf(p, ctx.tonality);
+  const degree = degreeOf(p, ctx.key);
   const inChord = chordDegrees(phrase.chords[slot.bar - phrase.firstBar]).includes(degree);
 
   // Tonal stability, register, harmony.
@@ -284,16 +306,17 @@ function naturalWeight(ctx, phrase, i, state, p) {
   return w;
 }
 
-// Chromatic notes never stand alone: each is approached by step or semitone
-// from a natural note, sits off the strong beats, and commits the next note to
-// its resolution a semitone away (sharps resolve up, flats down).
+// Chromatic notes never stand alone: each is approached from a scale note at
+// most a whole tone away, sits off the strong beats, and commits the next note
+// to its resolution, the scale note a semitone further on. It is written
+// toward that resolution (spellToward in theory.js).
 function chromaticOptions(ctx, phrase, i, state) {
   const { slots } = phrase;
   const slot = slots[i];
   const bar = ctx.bars[slot.bar];
   const last = slots.length - 1;
   const { prev, target } = state;
-  if (!bar.chromatics.length || !prev || prev.alter !== 0 || i >= last) return [];
+  if (!bar.outside.length || !prev || !inKey(ctx.key, prev) || i >= last) return [];
   if (slot.start % 8 === 0 || afterShift(ctx, slot)) return [];
 
   const next = ctx.bars[slots[i + 1].bar];
@@ -301,44 +324,49 @@ function chromaticOptions(ctx, phrase, i, state) {
   const register = value => gaussian(value - ctx.centres[slot.bar], TUNING.registerSigma);
   const options = [];
 
-  for (const x of bar.chromatics) {
+  for (const x of bar.outside) {
     for (const dir of [1, -1]) {
-      const resolution = next.natural.get(x.value + dir);
+      const resolution = next.scaleAt.get(x.value + dir);
       if (!resolution) continue;
-      // From the resolution itself (a neighbour note), from the natural a
-      // semitone on the far side (a passing note), or from a whole step
+      // From the resolution itself (a neighbour note), from the scale note a
+      // semitone on the far side (a passing note), or from a whole tone
       // further. This also rules out the augmented second.
       const approach = prev.value - x.value;
       if (approach !== dir && approach !== -dir && approach !== -2 * dir) continue;
       if (cadence && resolution.value !== target.value) continue;
+      const spelling = spellToward(x.value, resolution, ctx.key);
+      if (!spelling) continue;
+      const pitch = { ...x, ...spelling };
+      // The approach must also read as a step or less. Where E sharp is written
+      // as F natural, D sharp before it would stand a diminished third away.
+      if (Math.abs(stepsBetween(prev, pitch)) > 1) continue;
 
-      const degree = degreeOf(resolution, ctx.tonality);
+      const degree = degreeOf(resolution, ctx.key);
       let w = TUNING.chromaticRate * ctx.degreeWeights[degree] * register(x.value);
-      if (dir === -1) w *= 0.5;                       // lowered notes are rarer
-      if (dir === 1 && degree === 0) w *= 2;          // leading tone to the tonic
-      if (dir === 1 && degree === 4) w *= 1.5;        // raised 4th to the dominant
-      if (dir === -1 && degree === 5 && ctx.tonality.mode === 'major') w *= 1.4; // lowered 7th
-      if (cadence) w *= 3;
-      options.push({
-        pitch: respell(x, dir === 1 ? 'sharp' : 'flat'),
-        pending: [resolution],
-        weight: w
-      });
+      if (dir === -1) w *= TUNING.chromaticFalling;
+      if (dir === 1 && degree === 0) w *= TUNING.leadingNote;
+      if (dir === 1 && degree === 4) w *= TUNING.raisedFourth;
+      if (dir === -1 && degree === 5 && ctx.key.mode === 'major') w *= TUNING.loweredSeventh;
+      if (cadence) w *= TUNING.chromaticCadence;
+      options.push({ pitch, pending: [resolution], weight: w });
     }
   }
 
-  // Melodic minor: the raised 6th appears only on the way up through the
-  // raised 7th to the tonic (E F# G# A in A minor).
-  if (ctx.tonality.mode === 'minor' && i + 2 <= last && degreeOf(prev, ctx.tonality) === 4) {
-    const sixth = bar.chromatic.get(prev.value + 2);
-    const seventh = next.chromatic.get(prev.value + 4);
-    const tonic = ctx.bars[slots[i + 2].bar].natural.get(prev.value + 5);
+  // Melodic minor: the raised sixth appears only on the way up from the fifth
+  // degree through the raised seventh to the tonic (E F# G# A in A minor).
+  // The pool already writes those two notes as the sixth and seventh letters
+  // raised (D sharp and E sharp in F sharp minor).
+  if (ctx.key.mode === 'minor' && i + 2 <= last && degreeOf(prev, ctx.key) === 4) {
+    const sixth = bar.outsideAt.get(prev.value + 2);
+    const seventh = next.outsideAt.get(prev.value + 4);
+    const tonic = ctx.bars[slots[i + 2].bar].scaleAt.get(prev.value + 5);
     const closes = i + 2 === last && target;
     if (sixth && seventh && tonic && !(closes && tonic.value !== target.value)) {
       options.push({
-        pitch: respell(sixth, 'sharp'),
-        pending: [respell(seventh, 'sharp'), tonic],
-        weight: TUNING.chromaticRate * 1.5 * register(sixth.value) * (closes ? 3 : 1)
+        pitch: sixth,
+        pending: [seventh, tonic],
+        weight: TUNING.chromaticRate * TUNING.melodicMinor * register(sixth.value) *
+          (closes ? TUNING.chromaticCadence : 1)
       });
     }
   }
@@ -367,7 +395,7 @@ function scorePhrase(notes, hasTarget, ctx) {
       highCount++;
     }
     if (v < low) low = v;
-    if (n.pitch.alter !== 0) chromatic++;
+    if (!inKey(ctx.key, n.pitch)) chromatic++;
     if (i > 0) {
       const semis = Math.abs(v - notes[i - 1].pitch.value);
       if (semis === 0) repeats++;
@@ -389,6 +417,6 @@ function scorePhrase(notes, hasTarget, ctx) {
       if (Math.abs(notes[i].pitch.value - notes[i - 1].pitch.value) > 5) score -= 1;
     }
   }
-  if (ctx.accidentals && chromatic >= 1 && chromatic <= Math.max(2, notes.length / 6)) score += 1;
+  if (ctx.chromatic && chromatic >= 1 && chromatic <= Math.max(2, notes.length / 6)) score += 1;
   return score;
 }

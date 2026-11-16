@@ -1,10 +1,11 @@
-// The note map: every note of each enabled position on a staff, with the
-// left-hand finger that plays it. A reference view, not an exercise.
-import { ROMAN, poolFor } from '../music/fretboard.js';
+// The note map: the notes a study with the current settings can contain, for
+// each enabled position, on a staff with the left-hand finger that plays each.
+// A reference view, not an exercise.
+import { ROMAN, notePool } from '../music/fretboard.js';
 import { pitchName } from '../music/pitch.js';
 import { drawClef, drawNote, drawStaff } from './draw.js';
 import { SPACE as S } from './glyphs.js';
-import { PAGE, placeNote, singleStem } from './layout.js';
+import { PAGE, accidentalSign, placeNote, singleStem } from './layout.js';
 import { el } from './svg.js';
 import { attachTooltip, hideTooltip } from './tooltip.js';
 
@@ -14,12 +15,14 @@ const LABEL_BELOW = 2.1 * S;  // finger number under a stem-up note
 const LABEL_ABOVE = 1.5 * S;  // ... and over a stem-down note
 
 // One row of notes on a staff whose bottom line is at y = 0, with how far its
-// ink reaches above and below.
+// ink reaches above and below. The map has no key signature and its notes are
+// not in a measure, so each one carries its own sharp or flat, and a note
+// without either carries nothing, whatever the key.
 function buildRow(pitches) {
   let above = -4 * S; // the top staff line
   let below = 0;
   const notes = pitches.map(pitch => {
-    const note = placeNote(pitch, 0, 0, pitch.alter === 0 ? null : 'sharp');
+    const note = placeNote(pitch, 0, 0, pitch.alter === 0 ? null : accidentalSign(pitch.alter));
     note.stem = singleStem(note, 0);
     // Finger numbers go on the notehead side, but always clear of the staff lines.
     note.labelY = note.stem.up
@@ -71,7 +74,7 @@ function drawPosition(pool, viewWidth) {
 
 export function renderNoteMap(settings, container, viewWidth) {
   const sections = settings.positions.map(position => {
-    const pool = poolFor(position, settings);
+    const pool = notePool(position, settings);
     const section = document.createElement('section');
     section.className = 'map-section';
 

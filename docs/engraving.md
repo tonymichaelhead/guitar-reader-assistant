@@ -18,6 +18,7 @@ Code points and metrics used (all in `glyphs.js`, values in staff spaces from Br
 | G clef, black notehead, time-signature 4 | U+E050, U+E0A4, U+E084 |
 | Flat, natural, sharp | U+E260, U+E261, U+E262 |
 | Notehead width | 1.18 |
+| G clef, sharp, flat width (each glyph fills its advance) | 2.684, 0.996, 0.904 |
 | Stem attachment, above or below the notehead's centre | 0.168 |
 | Staff line, stem, ledger line thickness | 0.13, 0.12, 0.16 |
 | Ledger line extension past the notehead | 0.4 |
@@ -38,6 +39,35 @@ Each system is then stretched so its final barline reaches the right margin. If 
 
 The layout width follows the page: `viewWidthFor` maps the container's width to between 480 and 960 units, and `main.js` re-lays out when that changes.
 
+What the measures of a system can use is the width between the margins less the head of the system: the clef's room (3.7 spaces), the key signature's room (below; none without a signature) and, on the first system, the time signature's room (2.5 spaces). All three are counted wherever a width is: in the choice of four, two or one measures, in the stretch, and in the widening of a dense study.
+
+## Key signature
+
+A Score names its key (`score.key`), and `layoutScore` reads the signature from it: so many sharps or flats. Every system starts clef, key signature, then the time signature on the first system only, then the measures. The signature is repeated on every system and never changes within a study, so there are no cancelling naturals.
+
+**Placement.** The signs stand in the order a signature adds them, at the heights every treble-clef signature uses. `placeKeySignature` holds all seven of each, though the keys on offer go no further than four sharps and two flats.
+
+| | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|
+| Sharps | F5 | C5 | G5 | D5 | A4 | E5 | B4 |
+| Flats | B4 | E5 | A4 | D5 | G4 | C5 | F4 |
+
+A sign is drawn like an accidental beside a note: centred on its line or space, here with its left edge at the `x` the layout gives.
+
+**Spacing.** In staff spaces:
+
+| Gap | Here | Practice |
+|---|---|---|
+| Right edge of the clef to the first sign | 1.0 | Gould 1 to 1.25; MuseScore 1.0 (0.75 since 4.4); LilyPond 3.5 from the clef's left edge, about 0.8 after a clef as wide as Bravura's |
+| Between signs | 0: each takes its own width, 0.996 for a sharp and 0.904 for a flat | LilyPond adds no padding between the signs of a signature |
+| Last sign to the time signature's room, or to the first measure | 1.0 | |
+| ... which puts the digits of the time signature | 1.04 after the last sign | Gould 1 to 1.5; MuseScore 1.0; LilyPond 1.15 |
+| ... and the first notehead of a later system | 1.81 after it | Gould 2.5; MuseScore 2.5; LilyPond 2.5 |
+
+The first note is closer than Gould's ideal because every lead-in here is: a measure's first notehead is centred 1.4 spaces after its start, which also leaves 1.38 spaces after a clef and 1.55 after the time signature. An accidental on that first note is at least 1.36 spaces from the signature, far enough not to be read as part of it.
+
+The room a signature takes out of every system is therefore 1.43 spaces plus its signs: 2.43 for one sharp, 5.42 for four, 3.24 for two flats. A study without a key (Random mode, or one saved before keys existed) and a study in C major or A minor have no signature, give up no room, and are laid out exactly as before keys existed.
+
 ## Stems
 
 - A note below the middle line has its stem up; on or above it, down.
@@ -53,7 +83,17 @@ The layout width follows the page: `viewWidthFor` maps the container's width to 
 
 ## Accidentals
 
-An accidental stays in force for its line or space until the barline. `resolveAccidentals` therefore writes a sign only when a note's alteration differs from what is in force, and writes a natural to cancel an earlier sharp or flat. The rule is per octave.
+`resolveAccidentals` decides which notes carry a sign.
+
+- At the start of every measure the key signature is in force, for every octave of its letters.
+- A sign beside a note then holds for that line or space, in that octave only, until the barline.
+- A note carries a sign exactly when its alteration differs from what is in force for its line or space, and the sign is the one for its own alteration: sharp, flat or natural.
+
+So in D major an F sharp carries nothing, an F natural carries a natural, and an F sharp later in that measure and octave carries a sharp again. After the barline it carries nothing. Without a key signature the same rule gives what it always gave: a sign on the first altered note of a measure, and a natural to cancel it. There are no courtesy accidentals.
+
+A note is placed by its letter, not by its sound: B sharp 3 sounds as C4 and is written under C4's ledger line; C flat 4 sounds as B3 and is written on that ledger line.
+
+The note map is a table of notes, not music in a key. It has no key signature and no measures, so `resolveAccidentals` is not used there: every note with a sharp or a flat in its spelling shows that sign, and a note with neither shows none.
 
 ## Position marks and measure numbers
 
@@ -81,5 +121,8 @@ A study in quarter notes comes to about 14 KB, and a dense sixteenth-note study 
 - Bravura — https://github.com/steinbergmedia/bravura
 - Spacing table from *Behind Bars*, as reproduced in MuseScore's spacing proposal — https://musescore.org/sites/musescore.org/files/2020-03/Improving%20MuseScore%27s%20Horizontal%20Spacing.pdf
 - Beaming by beat, and stem direction — Gould, *Behind Bars*, as quoted at https://forums.steinberg.net/t/beams-and-stems-above-or-below-notes/710711
+- Gaps around a key signature in *Behind Bars* (clef to signature 1 to 1.25, signature to time signature 1 to 1.5, signature to first note 2.5), as recorded beside MuseScore 3's defaults, with those defaults — https://github.com/musescore/MuseScore/blob/3.x/libmscore/style.cpp (`clefKeyDistance`, `keyTimesigDistance`, `systemHeaderDistance`)
+- MuseScore 4.4's defaults — https://github.com/musescore/MuseScore/blob/v4.4.4/src/engraving/style/styledef.cpp
+- LilyPond's defaults: `space-alist` of Clef and of KeySignature — https://lilypond.org/doc/v2.24/Documentation/internals/clef and https://lilypond.org/doc/v2.24/Documentation/internals/keysignature ; no padding between the signs of a signature unless one is set — https://github.com/lilypond/lilypond/blob/v2.24.4/lily/key-signature-interface.cc
 
-The one-space limit on beam slant and the 2.5-space minimum to the inner beam are common engraving guidance that was found only in secondary summaries, not in a primary source.
+The one-space limit on beam slant and the 2.5-space minimum to the inner beam are common engraving guidance that was found only in secondary summaries, not in a primary source. Gould's figures for the key signature were likewise read from the comments in MuseScore's source, not from the book. The heights of the signs of a key signature are the universal convention and were not looked up.

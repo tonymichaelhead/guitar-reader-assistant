@@ -34,7 +34,7 @@ test('there are twelve positions with Roman numerals', () => {
 });
 
 test('fifth position spans A3 to C6 as written', () => {
-  const pool = poolFor(5, { accidentals: true, strings: ALL_STRINGS });
+  const pool = poolFor(5, { accidentals: 'sharps', strings: ALL_STRINGS });
   assert.equal(pitchName(pool[0]), 'A3');
   assert.equal(pitchName(pool[pool.length - 1]), 'C6');
 });
@@ -60,13 +60,13 @@ test('other positions cover four frets, one finger per fret', () => {
 
 test('without accidentals the pool holds natural notes only', () => {
   for (const position of POSITION_NUMBERS) {
-    const pool = poolFor(position, { accidentals: false, strings: ALL_STRINGS });
+    const pool = poolFor(position, { accidentals: 'none', strings: ALL_STRINGS });
     assert.ok(pool.every(p => p.alter === 0));
   }
 });
 
 test('string toggles narrow both the notes and their fingerings', () => {
-  const pool = poolFor(5, { accidentals: true, strings: [2, 1] });
+  const pool = poolFor(5, { accidentals: 'sharps', strings: [2, 1] });
   assert.ok(pool.length > 0);
   for (const p of pool) {
     assert.ok(p.fingerings.length > 0);
@@ -77,7 +77,7 @@ test('string toggles narrow both the notes and their fingerings', () => {
 test('no position and string selection ever leaves fewer than two natural notes', () => {
   for (const position of POSITION_NUMBERS) {
     for (const strings of stringSubsets()) {
-      const pool = poolFor(position, { accidentals: false, strings });
+      const pool = poolFor(position, { accidentals: 'none', strings });
       assert.ok(pool.length >= 2, `position ${position}, strings ${strings}`);
     }
   }

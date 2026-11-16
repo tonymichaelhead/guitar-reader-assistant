@@ -1,5 +1,6 @@
 // Fretboard: which written pitches each position offers, and how to finger them.
-import { spell } from './pitch.js';
+import { respell, spell } from './pitch.js';
+import { inKey, keyById, spellInKey } from './theory.js';
 
 // Open strings as written pitch, 6th string first: E3 A3 D4 G4 B4 E5.
 export const OPEN_STRINGS = [40, 45, 50, 55, 59, 64];
@@ -36,13 +37,47 @@ const positionNotes = position => {
   return cache.get(position);
 };
 
-// Notes playable in a position on the enabled strings, lowest first, with
-// fingerings narrowed to those strings. Sharps-only spelling.
-export function poolFor(position, { accidentals, strings }) {
-  let notes = positionNotes(position);
-  if (!accidentals) notes = notes.filter(p => p.alter === 0);
-  if (strings.length === 6) return notes;
-  return notes
+// The accidentals setting as one of its three values. Settings reach this
+// module through sanitize, but a study saved before the setting had three
+// values carries true or false, and may be looked at before it is sanitized:
+// "on" meant sharps.
+const spellingOf = accidentals => {
+  if (accidentals === true) return 'sharps';
+  return accidentals === 'sharps' || accidentals === 'flats' ? accidentals : 'none';
+};
+
+const onStrings = (notes, strings) => (strings.length === 6
+  ? notes
+  : notes
     .map(p => ({ ...p, fingerings: p.fingerings.filter(f => strings.includes(f.string)) }))
-    .filter(p => p.fingerings.length > 0);
+    .filter(p => p.fingerings.length > 0));
+
+// Notes playable in a position on the enabled strings, lowest first, with
+// fingerings narrowed to those strings. `accidentals` is 'none' (the natural
+// notes only), 'sharps' (every note, the black keys written as sharps) or
+// 'flats' (every note, the black keys written as flats).
+export function poolFor(position, { accidentals, strings }) {
+  const written = spellingOf(accidentals);
+  let notes = positionNotes(position);
+  if (written === 'flats') notes = notes.map(p => (p.alter === 0 ? p : respell(p, 'flat')));
+  else if (written === 'none') notes = notes.filter(p => p.alter === 0);
+  return onStrings(notes, strings);
+}
+
+// Every note of a position on the enabled strings, written as a key writes it
+// (see spellInKey in theory.js, and inKey to tell the notes of its scale from
+// the rest). `key` is a key from theory.js.
+export function keyPool(position, { strings }, key) {
+  const notes = positionNotes(position).map(p => ({ ...p, ...spellInKey(p.value, key) }));
+  return onStrings(notes, strings);
+}
+
+// The notes a study with these settings can contain in a position. Random
+// mode: as its accidentals setting says. Musical mode: the notes of the key,
+// and with accidentals switched on the notes outside it too.
+export function notePool(position, settings) {
+  if (settings.melody !== 'musical') return poolFor(position, settings);
+  const key = keyById(settings.key);
+  const pool = keyPool(position, settings, key);
+  return spellingOf(settings.accidentals) === 'none' ? pool.filter(p => inKey(key, p)) : pool;
 }

@@ -76,6 +76,12 @@ function drawClef(pen, x, bottom) {
   pen.glyph('gClef', x, bottom - S);
 }
 
+// The signs of a key signature from layout.js: like an accidental, each is
+// centred on its line or space, here with its left edge at `x`.
+function drawKeySignature(pen, signs) {
+  for (const { sign, x, y } of signs) pen.glyph(sign, x, y);
+}
+
 // 4/4: each digit is two spaces tall and centred on its baseline.
 function drawTimeSignature(pen, x, top) {
   for (const y of [top + S, top + 3 * S]) pen.glyph('timeSig4', x, y, 'middle');
@@ -112,6 +118,7 @@ function drawNote(pen, note) {
 function drawSystem(pen, system) {
   drawStaff(pen, system.staffStart, system.staffEnd, system.top);
   drawClef(pen, system.clefX, system.bottom);
+  drawKeySignature(pen, system.keySignature);
   if (system.timeX !== null) drawTimeSignature(pen, system.timeX, system.top);
   if (system.measureNumber !== null) {
     pen.text(String(system.measureNumber), system.staffStart, system.top - 2 * S, MEASURE_NUMBER);

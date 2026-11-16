@@ -54,14 +54,17 @@ Choose the control by what the setting is, not by how it looks:
 | Control | For | Markup |
 |---|---|---|
 | Chip | Independent on/off picks from a set (positions, strings, note values) | `input[type=checkbox]` in a `fieldset` |
-| Switch | A single on/off setting (rotate positions, accidentals) | `input[type=checkbox][role=switch]` |
-| Segmented control | One of two named options (melody, view) | `input[type=radio]` |
+| Choice chip | One pick from a set too large for a segmented control (the key) | `input[type=radio]` in a `fieldset`, drawn as a chip |
+| Switch | A single on/off setting (rotate positions, notes outside the key) | `input[type=checkbox][role=switch]` |
+| Segmented control | One of two or three named options (melody, view, accidentals in Random mode) | `input[type=radio]` |
 
 Rules:
 
 - Every change to a setting applies immediately and is remembered; settings have no Save button. (The Save button on the page keeps a study, not the settings.)
 - A selected chip or segment is filled with ink **and** shows a gilt mark under its label, so the state never depends on colour alone. A switch shows its state by the knob's position.
 - A group can never be empty: the last chip left on is disabled until another is switched on.
+- The key chips stand in two rows of seven, major keys over their relative minors, so each column shares a key signature. A line under them spells the signature out ("D major: two sharps, F♯ C♯").
+- A control that only one melody mode uses is hidden in the other, not greyed out: the key row and the "Notes outside the key" switch belong to Musical mode, the None / Sharps / Flats choice to Random mode. Both accidentals controls write the same setting, and the sharps-or-flats choice is kept while Musical mode has it switched off.
 - Focus is shown with `:focus-visible` as a 2 px ring in `--focus`.
 - The real input covers its chip, invisibly, so the whole chip is the click and touch target and the browser's own keyboard handling applies.
 

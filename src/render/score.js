@@ -1,15 +1,21 @@
 // Draws a Score as SVG: one <svg> per system, stacked, so that a printed page
 // can break between systems but never through one.
 import { ROMAN } from '../music/fretboard.js';
-import { drawBarline, drawBeam, drawClef, drawNote, drawStaff, drawTimeSignature } from './draw.js';
+import {
+  drawBarline, drawBeam, drawClef, drawKeySignature, drawNote, drawStaff, drawTimeSignature
+} from './draw.js';
 import { SPACE as S } from './glyphs.js';
 import { PAGE, layoutScore } from './layout.js';
 import { el } from './svg.js';
 import { attachTooltip, hideTooltip } from './tooltip.js';
 
+// Said aloud, a key's sharp or flat sign is a word.
+const spoken = label => label.replace('♯', ' sharp').replace('♭', ' flat');
+
 function drawSystem(svg, system) {
   drawStaff(svg, system.staffStart, system.staffEnd, system.top);
   drawClef(svg, system.clefX, system.bottom);
+  drawKeySignature(svg, system.keySignature);
   if (system.timeX !== null) drawTimeSignature(svg, system.timeX, system.top);
   if (system.measureNumber !== null) {
     svg.appendChild(el('text', {
@@ -36,7 +42,8 @@ export function renderScore(score, container, viewWidth) {
   wrapper.setAttribute('role', 'img');
   wrapper.setAttribute(
     'aria-label',
-    `Sight-reading study number ${score.seed}, ${score.measures.length} measures in 4/4`);
+    `Sight-reading study number ${score.seed}, ${score.measures.length} measures in 4/4` +
+      (score.tonality ? `, ${spoken(score.tonality)}` : ''));
 
   // Each system owns the slice of the drawing from its headroom down to the
   // next system's headroom; the last one runs to the bottom of the layout.

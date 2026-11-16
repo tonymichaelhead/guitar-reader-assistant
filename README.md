@@ -9,9 +9,10 @@ Endless sight-reading studies for classical guitar, engraved in the browser in t
 - **Positions I–XII.** Switch on the positions you want. A study stays in one of them, or changes position every measure in a shuffled order that then repeats.
 - **Strings.** Limit a study to any set of strings.
 - **Note values.** Quarter, eighth and sixteenth notes, alone or mixed.
-- **Accidentals.** Natural notes only, or with sharps and flats.
 - **Melody.** *Random* leaves every note to chance. *Musical* still generates at random but writes phrases in a key, with cadences, stepwise motion and resolved chromatic notes.
-- **Fingerings.** Hover over a note (or tap it) to see its strings, frets and fingers. The *Note map* view lists every note of the enabled positions.
+- **Key.** Musical studies are in the key you choose, from the fourteen most used on the guitar (up to four sharps and two flats, major and minor), with its key signature on every line.
+- **Accidentals.** In Random mode: natural notes only, or every note with the black keys written as sharps or as flats. In Musical mode: the notes of the key only, or with passing notes from outside it.
+- **Fingerings.** Hover over a note (or tap it) to see its strings, frets and fingers. The *Note map* view lists the notes a study with the current settings can contain, position by position.
 - **Library.** *Save* keeps a study in your browser's local storage; *Library* lists the saved ones to reopen or delete. They stay on that browser and device only.
 - **Export.** *Download PDF* makes a small, sharp PDF of the study right in the browser, with nothing uploaded anywhere. *Print* sends the page to the printer.
 

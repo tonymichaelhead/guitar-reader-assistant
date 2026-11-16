@@ -56,22 +56,33 @@
         </fieldset>
 
         <fieldset class="group">
-          <legend>Pitch</legend>
-          <label class="switch">
-            <input type="checkbox" role="switch" id="accidentals" />
-            <span class="switch__track" aria-hidden="true"></span>
-            <span class="switch__text">Accidentals</span>
-          </label>
-          <p class="hint">Sharps and flats, written beside the notes.</p>
-        </fieldset>
-
-        <fieldset class="group">
           <legend>Melody</legend>
           <div class="segmented segmented--wide" id="melody">
             <label><input type="radio" name="melody" value="random" /><span>Random</span></label>
             <label><input type="radio" name="melody" value="musical" /><span>Musical</span></label>
           </div>
           <p class="hint" id="melodyHint"></p>
+        </fieldset>
+
+        <fieldset class="group" id="keyGroup">
+          <legend>Key</legend>
+          <div class="keys" id="keys"></div>
+          <p class="hint" id="keyHint"></p>
+        </fieldset>
+
+        <fieldset class="group">
+          <legend>Accidentals</legend>
+          <div class="segmented segmented--wide" id="accidentals">
+            <label><input type="radio" name="accidentals" value="none" /><span>None</span></label>
+            <label><input type="radio" name="accidentals" value="sharps" /><span>Sharps</span></label>
+            <label><input type="radio" name="accidentals" value="flats" /><span>Flats</span></label>
+          </div>
+          <label class="switch" id="chromaticSwitch">
+            <input type="checkbox" role="switch" id="chromatic" />
+            <span class="switch__track" aria-hidden="true"></span>
+            <span class="switch__text">Notes outside the key</span>
+          </label>
+          <p class="hint" id="accidentalsHint"></p>
         </fieldset>
       </aside>
     </div>

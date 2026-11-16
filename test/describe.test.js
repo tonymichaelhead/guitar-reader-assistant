@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { preferredPageSize } from '../src/export/download.js';
+import { KEYS, keyById } from '../src/music/theory.js';
 import {
-  describeBriefly, describeNoteMap, describeScore, fileStem, studyName, summarizeSettings
+  describeBriefly, describeKey, describeNoteMap, describeScore, fileStem, spokenKey, studyName,
+  summarizeSettings
 } from '../src/ui/describe.js';
 import { scoreWith, settingsWith } from './helpers.js';
 
@@ -30,10 +32,10 @@ test('rotating positions are listed in the order they first appear', () => {
 });
 
 test('the description follows the score’s own settings, not the current ones', () => {
-  const score = scoreWith({ noteValues: ['eighth', 'sixteenth'], accidentals: true, strings: [3, 2, 1] }, 5);
+  const score = scoreWith({ noteValues: ['eighth', 'sixteenth'], accidentals: 'sharps', strings: [3, 2, 1] }, 5);
   const { meta } = describeScore(score);
   assert.match(meta, /eighth & sixteenth notes/);
-  assert.match(meta, /with accidentals/);
+  assert.match(meta, /with sharps/);
   assert.match(meta, /strings 3, 2, 1/);
 });
 
@@ -55,15 +57,61 @@ test('the note map is described by the current settings', () => {
   assert.equal(describeScore(scoreWith({}, 1)).hint, undefined);
 });
 
+test('a key is described with its signature', () => {
+  assert.equal(describeKey(keyById('C')), 'C major: no sharps or flats.');
+  assert.equal(describeKey(keyById('Am')), 'A minor: no sharps or flats.');
+  assert.equal(describeKey(keyById('G')), 'G major: one sharp, F♯.');
+  assert.equal(describeKey(keyById('Bm')), 'B minor: two sharps, F♯ C♯.');
+  assert.equal(describeKey(keyById('E')), 'E major: four sharps, F♯ C♯ G♯ D♯.');
+  assert.equal(describeKey(keyById('Dm')), 'D minor: one flat, B♭.');
+  assert.equal(describeKey(keyById('Bb')), 'B♭ major: two flats, B♭ E♭.');
+  for (const key of KEYS) assert.ok(describeKey(key).startsWith(`${key.label}: `));
+  assert.equal(spokenKey('F♯ minor'), 'F sharp minor');
+  assert.equal(spokenKey('B♭ major'), 'B flat major');
+  assert.equal(spokenKey('C major'), 'C major');
+});
+
+test('the accidentals setting reads differently in the two melody modes', () => {
+  const meta = overrides => describeScore(scoreWith(overrides, 9)).meta;
+  assert.match(meta({ accidentals: 'none' }), /· natural notes ·/);
+  assert.match(meta({ accidentals: 'sharps' }), /· with sharps ·/);
+  assert.match(meta({ accidentals: 'flats' }), /· with flats ·/);
+  assert.match(meta({ melody: 'musical', key: 'D' }), /· notes of the key only ·/);
+  assert.match(meta({ melody: 'musical', key: 'D', accidentals: 'flats' }), /· with chromatic notes ·/);
+  // A study saved before the setting had three values still reads: on meant sharps.
+  const old = scoreWith({}, 9);
+  old.settings.accidentals = true;
+  delete old.settings.key;
+  assert.match(describeScore(old).meta, /· with sharps ·/);
+  assert.equal(describeBriefly(old).split(' · ').at(-1), 'sharps');
+  // A stored value that is no setting at all, even one that names a property
+  // every object has, reads as none.
+  for (const junk of ['constructor', '__proto__', 'toString', 7, null]) {
+    old.settings.accidentals = junk;
+    assert.match(describeScore(old).meta, /· natural notes ·/);
+  }
+});
+
+test('the note map names the key in Musical mode', () => {
+  assert.match(describeNoteMap(settingsWith({ melody: 'musical', key: 'F#m' })).meta, /^F♯ minor · notes of the key only · /);
+  assert.match(describeNoteMap(settingsWith({ accidentals: 'flats' })).meta, /^with flats · /);
+});
+
 test('short forms: list row, settings summary, name and file name', () => {
-  const score = scoreWith({ melody: 'musical', accidentals: true }, 42);
+  const score = scoreWith({ melody: 'musical', accidentals: 'sharps' }, 42);
   assert.equal(studyName(score), 'Étude No. 42');
   assert.equal(fileStem(score), 'etude-0042');
-  assert.equal(describeBriefly(score), `${score.tonality} · Position V · quarter notes · accidentals`);
+  assert.equal(describeBriefly(score), `${score.tonality} · Position V · quarter notes · chromatic`);
   assert.equal(describeBriefly(scoreWith({}, 1)), 'random · Position V · quarter notes · naturals');
   assert.equal(
     summarizeSettings(settingsWith({ positions: [1, 5], rotatePositions: true })),
-    'Pos. I, V (rotating) · all strings · quarter · naturals · random');
+    'Pos. I, V (rotating) · all strings · quarter · random · naturals');
+  assert.equal(
+    summarizeSettings(settingsWith({ melody: 'musical', key: 'F#m', accidentals: 'sharps' })),
+    'Pos. V · all strings · quarter · F♯ minor · chromatic');
+  assert.equal(
+    summarizeSettings(settingsWith({ melody: 'musical', key: 'Bb' })),
+    'Pos. V · all strings · quarter · B♭ major · in key');
 });
 
 test('paper size follows the reader’s region: Letter in North America, A4 elsewhere', () => {

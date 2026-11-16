@@ -353,7 +353,7 @@
   color: var(--ink-soft);
 }
 
-/* ---- Chips: independent on/off choices (native checkboxes) ------------- */
+/* ---- Chips: on/off choices (checkboxes), or one of many (radios: the key) */
 .chips {
   display: grid;
   gap: 6px;
@@ -361,6 +361,23 @@
 .chips--positions { grid-template-columns: repeat(4, 1fr); }
 .chips--strings { grid-template-columns: repeat(6, 1fr); }
 .chips--values { grid-template-columns: repeat(3, 1fr); }
+/* Keys: seven to a row, major over minor, so narrower chips and smaller type. */
+.chips--keys {
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+.chips--keys + .chips--keys {
+  margin-top: 4px;
+}
+.chips--keys .chip__face {
+  padding-left: 0;
+  padding-right: 0;
+  font-size: 13px;
+}
+/* A control that belongs to the other melody mode is taken away altogether. */
+.panel [hidden] {
+  display: none;
+}
 
 .chip {
   position: relative;
@@ -486,7 +503,7 @@
   line-height: 1.2;
 }
 
-/* ---- Segmented control: one of two named options (native radios) ------- */
+/* ---- Segmented control: one of two or three named options (native radios) */
 .segmented {
   display: inline-grid;
   grid-auto-flow: column;
@@ -524,7 +541,15 @@
 }
 .segmented label:last-child span {
   border-radius: 0 var(--radius) var(--radius) 0;
+}
+/* Neighbours share one border line, however many segments there are. */
+.segmented label + label span {
   border-left: 0;
+}
+/* Three segments need the room two had. */
+.segmented--wide span {
+  padding-left: 6px;
+  padding-right: 6px;
 }
 .segmented input:checked + span {
   color: var(--paper);

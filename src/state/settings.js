@@ -1,6 +1,7 @@
 // User settings: defaults, validation and persistence.
 import { POSITION_NUMBERS } from '../music/fretboard.js';
 import { NOTE_VALUES } from '../music/rhythm.js';
+import { DEFAULT_KEY, keyById } from '../music/theory.js';
 
 const STORAGE_KEY = 'guitar-reading-assistant.settings.v1';
 const STRINGS = [6, 5, 4, 3, 2, 1];
@@ -12,9 +13,19 @@ export const DEFAULTS = Object.freeze({
   rotatePositions: false,
   strings: STRINGS,
   noteValues: ['quarter'],
-  accidentals: false,
-  melody: 'random'       // 'random' | 'musical'
+  accidentals: 'none',   // 'none' | 'sharps' | 'flats'; Musical mode reads it as off or on
+  melody: 'random',      // 'random' | 'musical'
+  key: DEFAULT_KEY       // a key id from theory.js; only Musical mode has a key
 });
+
+export const ACCIDENTALS = ['none', 'sharps', 'flats'];
+
+// Until keys were added this setting was a switch, stored as true or false,
+// and "on" wrote sharps.
+const accidentalsFrom = value => {
+  if (value === true) return 'sharps';
+  return ACCIDENTALS.includes(value) ? value : DEFAULTS.accidentals;
+};
 
 // Keep the allowed members of a stored list, in canonical order; fall back to
 // the default when nothing valid is left, because no group may be empty.
@@ -33,8 +44,9 @@ export function sanitize(raw) {
     rotatePositions: source.rotatePositions === true,
     strings: subset(source.strings, STRINGS, DEFAULTS.strings),
     noteValues: subset(source.noteValues, NOTE_VALUES, DEFAULTS.noteValues),
-    accidentals: source.accidentals === true,
-    melody: source.melody === 'musical' ? 'musical' : 'random'
+    accidentals: accidentalsFrom(source.accidentals),
+    melody: source.melody === 'musical' ? 'musical' : 'random',
+    key: keyById(source.key) ? source.key : DEFAULTS.key
   };
 }
 
